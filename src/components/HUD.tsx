@@ -1,9 +1,11 @@
 import React from 'react';
 import { useGameState } from '../store/useGameState';
-import { DollarSign, Calendar, Star, Users, Pause, Play, FastForward, Sun, CloudRain } from 'lucide-react';
+import { DollarSign, Calendar, Star, Users, Pause, Play, FastForward, Sun, CloudRain, BarChart2 } from 'lucide-react';
+import { DataDashboard } from './DataDashboard';
 
 export function HUD() {
-  const { money, day, month, rating, visitors, speed, gamePaused, weather, setSpeed, togglePause } = useGameState();
+  const { money, day, month, rating, visitorsCount, speed, gamePaused, weather, setSpeed, togglePause } = useGameState();
+  const [showData, setShowData] = React.useState(false);
 
   return (
     <div className="hud-panel" style={{ display: 'flex', gap: '16px', padding: '12px 24px', alignItems: 'center' }}>
@@ -29,8 +31,12 @@ export function HUD() {
 
       <div className="glass-pill">
         <Users size={16} /> 
-        {visitors}/1000
+        {visitorsCount}/1000
       </div>
+
+      <button onClick={() => setShowData(true)} className="glass-pill" style={{ background: 'var(--primary-color)' }}>
+        <BarChart2 size={16} /> 数据
+      </button>
 
       <div style={{ width: '1px', height: '24px', background: 'var(--panel-border)', margin: '0 8px' }} />
 
@@ -46,6 +52,7 @@ export function HUD() {
         </button>
       </div>
 
+      {showData && <DataDashboard onClose={() => setShowData(false)} />}
     </div>
   );
 }

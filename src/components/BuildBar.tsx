@@ -5,28 +5,44 @@ import { FACILITIES } from '../config/facilities';
 import type { FacilityType, Category } from '../types';
 import { Tent, DollarSign, X } from 'lucide-react';
 
-const CATEGORIES: { id: Category, label: string }[] = [
+const CATEGORIES: { id: Category | 'staff', label: string }[] = [
   { id: 'thrill', label: '刺激' },
   { id: 'gentle', label: '温和' },
   { id: 'shop', label: '商业' },
-  { id: 'facility', label: '基础' }
+  { id: 'facility', label: '基础' },
+  { id: 'staff', label: '员工' }
+];
+
+const STAFF_DEFS = [
+  { id: 'cleaner' as const, name: '清洁工', buildCost: 100, monthlyUpkeep: 60, iconColor: '#44BBA4' },
+  { id: 'mechanic' as const, name: '修理工', buildCost: 150, monthlyUpkeep: 90, iconColor: '#2E86AB' }
 ];
 
 export function BuildBar() {
-  const [activeTab, setActiveTab] = useState<Category>('thrill');
+  const [activeTab, setActiveTab] = useState<Category | 'staff'>('thrill');
   const { enterPlacementMode, placementMode, selectedFacilityToPlace, exitPlacementMode } = useParkState();
   const money = useGameState(state => state.money);
 
   const displayedFacilities = Object.values(FACILITIES).filter(f => f.category === activeTab);
 
-  if (placementMode) {
-    const selectedDef = FACILITIES[selectedFacilityToPlace as FacilityType];
+  if (placementMode && selectedFacilityToPlace) {
+    let name = '';
+    let cost = 0;
+    if (selectedFacilityToPlace === 'cleaner') {
+       name = '清洁工'; cost = 100;
+    } else if (selectedFacilityToPlace === 'mechanic') {
+       name = '修理工'; cost = 150;
+    } else {
+       const selectedDef = FACILITIES[selectedFacilityToPlace as FacilityType];
+       name = selectedDef?.name; cost = selectedDef?.buildCost;
+    }
+
     return (
       <div className="hud-panel" style={{ padding: '16px 24px', display: 'flex', alignItems: 'center', gap: '24px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <div style={{ width: 12, height: 12, borderRadius: '50%', background: 'var(--success-color)', animation: 'pulse 1s infinite' }} />
-          <span>正在建造: <strong>{selectedDef.name}</strong></span>
-          <span style={{ color: 'var(--money-color)' }}>-${selectedDef.buildCost.toLocaleString()}</span>
+          <span>正在选择地点: <strong>{name}</strong></span>
+          <span style={{ color: 'var(--money-color)' }}>-${cost.toLocaleString()}</span>
         </div>
         <button 
           onClick={exitPlacementMode}
@@ -59,7 +75,29 @@ export function BuildBar() {
 
       {/* Items */}
       <div style={{ display: 'flex', gap: '12px', overflowX: 'auto', paddingBottom: '8px' }}>
-        {displayedFacilities.map(f => {
+        
+        {activeTab === 'staff' 
+          ? STAFF_DEFS.map(s => {
+              const afford = money >= s.buildCost;
+              return (
+                <button
+                  key={s.id}
+                  onClick={() => afford && enterPlacementMode(s.id)}
+                  style={{
+                    width: '120px', height: '100px', background: 'rgba(255,255,255,0.05)',
+                    border: '1px solid var(--panel-border)', borderRadius: '8px',
+                    display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '8px',
+                    opacity: afford ? 1 : 0.4, cursor: afford ? 'pointer' : 'not-allowed'
+                  }}>
+                  <Tent size={24} color={s.iconColor} />
+                  <div style={{ fontSize: '13px', fontWeight: 500 }}>{s.name}</div>
+                  <div style={{ fontSize: '12px', color: 'var(--money-color)', display: 'flex', alignItems: 'center' }}>
+                    <DollarSign size={12} />{s.buildCost}
+                  </div>
+                </button>
+              )
+          })
+          : displayedFacilities.map(f => {
           const afford = money >= f.buildCost;
           return (
             <button

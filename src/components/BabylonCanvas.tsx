@@ -15,23 +15,33 @@ export function BabylonCanvas() {
     }
 
     const handlePlacement = (e: Event) => {
-      const customEvent = e as CustomEvent<{ id: FacilityType; x: number; z: number }>;
+      const customEvent = e as CustomEvent<{ id: FacilityType | 'cleaner' | 'mechanic'; x: number; z: number }>;
       const { id, x, z } = customEvent.detail;
       
-      const def = FACILITIES[id];
-      if (!def) return;
-
       const { deductMoney } = useGameState.getState();
       const { addFacility, exitPlacementMode } = useParkState.getState();
+
+      if (id === 'cleaner' || id === 'mechanic') {
+         const cost = id === 'cleaner' ? 100 : 150;
+         if (deductMoney(cost)) {
+             window.dispatchEvent(new CustomEvent('onStaffSpawn', { detail: { type: id, x, z } }));
+             exitPlacementMode();
+         }
+         return;
+      }
+
+      const def = FACILITIES[id as FacilityType];
+      if (!def) return;
 
       if (deductMoney(def.buildCost)) {
         addFacility({
           instanceId: `fac_${Date.now()}`,
-          typeId: id,
+          typeId: id as FacilityType,
           x,
           z,
           rotation: 0,
-          age: 0
+          age: 0,
+          breakdown: false
         });
         exitPlacementMode();
       }

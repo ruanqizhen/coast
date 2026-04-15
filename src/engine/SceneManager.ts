@@ -2,6 +2,7 @@ import { Engine, Scene, Vector3, HemisphericLight, Matrix, ArcRotateCamera, Abst
 import { CONSTANTS } from '../config/constants';
 import { GridManager } from './GridManager';
 import { FacilityManager } from './FacilityManager';
+import { EntityManager } from './EntityManager';
 
 export class SceneManager {
   private _canvas: HTMLCanvasElement;
@@ -11,6 +12,7 @@ export class SceneManager {
   
   public gridManager: GridManager;
   public facilityManager: FacilityManager;
+  public entityManager: EntityManager;
 
   constructor(canvas: HTMLCanvasElement) {
     this._canvas = canvas;
@@ -36,6 +38,7 @@ export class SceneManager {
     // Manage Subsystems
     this.gridManager = new GridManager(this.scene);
     this.facilityManager = new FacilityManager(this.scene);
+    this.entityManager = new EntityManager(this.scene);
 
     // Render loop
     this._engine.runRenderLoop(() => {

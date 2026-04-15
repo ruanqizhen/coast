@@ -36,4 +36,51 @@ export interface PlacedFacility {
   z: number;
   rotation: number;
   age: number;
+  breakdown: boolean; // Phase 2: Facility breakdown
+}
+
+// Phase 2 Types below
+
+export type VisitorState = 'idle' | 'walking' | 'queuing' | 'riding' | 'leaving';
+export type WeatherType = 'sunny' | 'cloudy' | 'rain';
+
+export interface VisitorNeeds {
+  hunger: number;
+  thirst: number;
+  toilet: number;
+  fatigue: number;
+  nausea: number;
+  fun: number;
+}
+
+export interface Visitor {
+  id: string;
+  pos: Position;
+  targetPos: Position | null;
+  targetFacilityId: string | null;
+  state: VisitorState;
+  needs: VisitorNeeds;
+  money: number;
+}
+
+export type StaffType = 'cleaner' | 'mechanic';
+
+export interface Staff {
+  id: string;
+  type: StaffType;
+  pos: Position;
+  targetPos: Position | null;
+  targetInstanceId: string | null;
+}
+
+export interface VomitPoint {
+  id: string;
+  pos: Position;
+}
+
+export interface MonthData {
+  monthIndex: number;
+  revenue: number;
+  expenses: number;
+  satisfaction: number;
 }
