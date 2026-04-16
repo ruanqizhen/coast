@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { SceneManager } from '../engine/SceneManager';
+import { Tools } from '@babylonjs/core';
 import { useGameState } from '../store/useGameState';
 import { useParkState } from '../store/useParkState';
 import { FACILITIES } from '../config/facilities';
@@ -15,14 +16,14 @@ export function BabylonCanvas() {
     }
 
     const handlePlacement = (e: Event) => {
-      const customEvent = e as CustomEvent<{ id: FacilityType | 'cleaner' | 'mechanic'; x: number; z: number }>;
+      const customEvent = e as CustomEvent<{ id: FacilityType | 'cleaner' | 'mechanic' | 'security' | 'entertainer'; x: number; z: number }>;
       const { id, x, z } = customEvent.detail;
       
       const { deductMoney } = useGameState.getState();
       const { addFacility, exitPlacementMode } = useParkState.getState();
 
-      if (id === 'cleaner' || id === 'mechanic') {
-         const cost = id === 'cleaner' ? 100 : 150;
+      if (id === 'cleaner' || id === 'mechanic' || id === 'security' || id === 'entertainer') {
+         const cost = id === 'cleaner' ? 100 : id === 'mechanic' ? 150 : id === 'security' ? 120 : 80;
          if (deductMoney(cost)) {
              window.dispatchEvent(new CustomEvent('onStaffSpawn', { detail: { type: id, x, z } }));
              exitPlacementMode();
@@ -47,10 +48,18 @@ export function BabylonCanvas() {
       }
     };
 
+    const handleScreenshot = () => {
+       if (managerRef.current && canvasRef.current) {
+          Tools.CreateScreenshot(managerRef.current.scene.getEngine(), managerRef.current.camera, { precision: 2 });
+       }
+    };
+
     window.addEventListener('onFacilityPlaced', handlePlacement);
+    window.addEventListener('onTakeScreenshot', handleScreenshot);
 
     return () => {
       window.removeEventListener('onFacilityPlaced', handlePlacement);
+      window.removeEventListener('onTakeScreenshot', handleScreenshot);
       managerRef.current?.dispose();
       managerRef.current = null;
     };

@@ -31,7 +31,33 @@ export class FacilityManager {
     const def = FACILITIES[facility.typeId];
     if (!def) return;
     
-    // Create a placeholder box based on category
+    // Phase 3: Coaster Track Pieces
+    if (facility.trackPieces && facility.trackPieces.length > 0) {
+        // Group meshes under a parent
+        const parent = new AbstractMesh(facility.instanceId, this.scene);
+        
+        facility.trackPieces.forEach((piece, idx) => {
+            let height = piece.type === 'climb' ? 4 : piece.type === 'dive' ? 2 : piece.type === 'loop' ? 8 : 2;
+            const mesh = MeshBuilder.CreateBox(`${facility.instanceId}_piece_${idx}`, { 
+                width: CONSTANTS.CELL_SIZE, depth: CONSTANTS.CELL_SIZE, height 
+            }, this.scene);
+            
+            mesh.position = new Vector3(
+                piece.x * CONSTANTS.CELL_SIZE, 
+                height / 2, 
+                piece.z * CONSTANTS.CELL_SIZE
+            );
+            
+            const mat = new StandardMaterial("mat_" + facility.instanceId + "_" + idx, this.scene);
+            mat.diffuseColor = Color3.FromHexString("#E84855"); // Thrill Red
+            mesh.material = mat;
+            mesh.setParent(parent);
+        });
+        this.meshes.set(facility.instanceId, parent);
+        return;
+    }
+
+    // Normal Facility
     const w = def.sizeX * CONSTANTS.CELL_SIZE;
     const h = def.sizeZ * CONSTANTS.CELL_SIZE;
     const height = def.category === 'thrill' ? 10 : def.category === 'shop' ? 3 : 5;

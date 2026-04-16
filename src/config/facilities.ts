@@ -79,4 +79,8 @@ export const FACILITIES: Record<string, FacilityDef> = {
     monthlyUpkeep: 0,
     appeal: 5,
   },
+  drop_tower: { id: 'drop_tower', name: '跳楼机', category: 'thrill', sizeX: 3, sizeZ: 3, buildCost: 1800, monthlyUpkeep: 55, excitement: 9, nausea: 4, appeal: 85 },
+  bumper_cars: { id: 'bumper_cars', name: '碰碰车', category: 'gentle', sizeX: 4, sizeZ: 4, buildCost: 900, monthlyUpkeep: 25, excitement: 4, nausea: 1, appeal: 55 },
+  dark_ride: { id: 'dark_ride', name: '暗黑骑乘', category: 'gentle', sizeX: 5, sizeZ: 8, buildCost: 2200, monthlyUpkeep: 70, excitement: 5, nausea: 3, appeal: 75 },
+  launch_coaster: { id: 'launch_coaster', name: '弹射过山车', category: 'thrill', sizeX: 8, sizeZ: 14, buildCost: 5000, monthlyUpkeep: 150, excitement: 10, nausea: 7, appeal: 100 },
 };

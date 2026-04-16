@@ -15,15 +15,27 @@ const CATEGORIES: { id: Category | 'staff', label: string }[] = [
 
 const STAFF_DEFS = [
   { id: 'cleaner' as const, name: '清洁工', buildCost: 100, monthlyUpkeep: 60, iconColor: '#44BBA4' },
-  { id: 'mechanic' as const, name: '修理工', buildCost: 150, monthlyUpkeep: 90, iconColor: '#2E86AB' }
+  { id: 'mechanic' as const, name: '修理工', buildCost: 150, monthlyUpkeep: 90, iconColor: '#2E86AB' },
+  { id: 'security' as const, name: '保安', buildCost: 120, monthlyUpkeep: 70, iconColor: '#333333' },
+  { id: 'entertainer' as const, name: '演艺人员', buildCost: 80, monthlyUpkeep: 50, iconColor: '#E84855' }
 ];
 
 export function BuildBar() {
   const [activeTab, setActiveTab] = useState<Category | 'staff'>('thrill');
-  const { enterPlacementMode, placementMode, selectedFacilityToPlace, exitPlacementMode } = useParkState();
+  const { enterPlacementMode, placementMode, selectedFacilityToPlace, exitPlacementMode, toggleCoasterBuilder, clearCoasterPieces } = useParkState();
   const money = useGameState(state => state.money);
 
   const displayedFacilities = Object.values(FACILITIES).filter(f => f.category === activeTab);
+
+  const handlePlacementSelection = (id: FacilityType | 'cleaner' | 'mechanic') => {
+      if (id === 'coaster_basic' || id === 'launch_coaster') {
+          clearCoasterPieces();
+          enterPlacementMode(id);
+          toggleCoasterBuilder(true);
+      } else {
+          enterPlacementMode(id);
+      }
+  };
 
   if (placementMode && selectedFacilityToPlace) {
     let name = '';
@@ -32,6 +44,10 @@ export function BuildBar() {
        name = '清洁工'; cost = 100;
     } else if (selectedFacilityToPlace === 'mechanic') {
        name = '修理工'; cost = 150;
+    } else if (selectedFacilityToPlace === 'security') {
+       name = '保安'; cost = 120;
+    } else if (selectedFacilityToPlace === 'entertainer') {
+       name = '演艺人员'; cost = 80;
     } else {
        const selectedDef = FACILITIES[selectedFacilityToPlace as FacilityType];
        name = selectedDef?.name; cost = selectedDef?.buildCost;
@@ -82,7 +98,7 @@ export function BuildBar() {
               return (
                 <button
                   key={s.id}
-                  onClick={() => afford && enterPlacementMode(s.id)}
+                  onClick={() => afford && handlePlacementSelection(s.id)}
                   style={{
                     width: '120px', height: '100px', background: 'rgba(255,255,255,0.05)',
                     border: '1px solid var(--panel-border)', borderRadius: '8px',
@@ -102,7 +118,7 @@ export function BuildBar() {
           return (
             <button
               key={f.id}
-              onClick={() => afford && enterPlacementMode(f.id)}
+              onClick={() => afford && handlePlacementSelection(f.id)}
               style={{
                 width: '120px',
                 height: '100px',

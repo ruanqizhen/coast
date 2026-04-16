@@ -13,6 +13,10 @@ interface GameState {
   weather: WeatherType;
   historicalData: MonthData[]; // Phase 2: Historical tracking
 
+  researchPoints: number; // Phase 3
+  monthlyResearchBudget: number; // Phase 3
+  unlockedTechs: string[]; // Phase 3
+
   currentMonthRevenue: number;
   currentMonthExpenses: number;
 
@@ -25,6 +29,8 @@ interface GameState {
   setRating: (rating: number) => void;
   setWeather: (weather: WeatherType) => void;
   setVisitorsCount: (count: number) => void;
+  setResearchBudget: (amount: number) => void;
+  unlockTech: (techId: string) => void;
 }
 
 export const useGameState = create<GameState>((set, get) => ({
@@ -37,6 +43,10 @@ export const useGameState = create<GameState>((set, get) => ({
   gamePaused: false,
   weather: 'sunny',
   historicalData: [],
+
+  researchPoints: 0,
+  monthlyResearchBudget: 0,
+  unlockedTechs: [],
 
   currentMonthRevenue: 0,
   currentMonthExpenses: 0,
@@ -62,6 +72,7 @@ export const useGameState = create<GameState>((set, get) => ({
     let nextDay = state.day + 1;
     let nextMonth = state.month;
     let historicalData = [...state.historicalData];
+    let rp = state.researchPoints;
     
     // Month transition
     if (nextDay > 30) {
@@ -80,13 +91,17 @@ export const useGameState = create<GameState>((set, get) => ({
       if (historicalData.length > 12) {
         historicalData.shift();
       }
+      
+      rp += Math.floor(state.monthlyResearchBudget / 10);
 
       return { 
         day: nextDay, 
         month: nextMonth, 
         currentMonthRevenue: 0, 
         currentMonthExpenses: 0,
-        historicalData 
+        historicalData,
+        researchPoints: rp,
+        money: state.money - state.monthlyResearchBudget
       };
     }
     return { day: nextDay, month: nextMonth };
@@ -97,4 +112,6 @@ export const useGameState = create<GameState>((set, get) => ({
   setRating: (rating) => set({ rating }),
   setWeather: (weather) => set({ weather }),
   setVisitorsCount: (count) => set({ visitorsCount: count }),
+  setResearchBudget: (amount) => set({ monthlyResearchBudget: amount }),
+  unlockTech: (techId: string) => set((state) => ({ unlockedTechs: [...state.unlockedTechs, techId] })),
 }));

@@ -1,11 +1,18 @@
 import React from 'react';
 import { useGameState } from '../store/useGameState';
-import { DollarSign, Calendar, Star, Users, Pause, Play, FastForward, Sun, CloudRain, BarChart2 } from 'lucide-react';
+import { DollarSign, Calendar, Star, Users, Pause, Play, FastForward, Sun, CloudRain, BarChart2, Beaker, Camera } from 'lucide-react';
 import { DataDashboard } from './DataDashboard';
+import { ResearchTechTree } from './ResearchTechTree';
+import { SceneManager } from '../engine/SceneManager';
 
 export function HUD() {
   const { money, day, month, rating, visitorsCount, speed, gamePaused, weather, setSpeed, togglePause } = useGameState();
   const [showData, setShowData] = React.useState(false);
+  const [showResearch, setShowResearch] = React.useState(false);
+
+  const takeScreenshot = () => {
+     window.dispatchEvent(new CustomEvent('onTakeScreenshot'));
+  };
 
   return (
     <div className="hud-panel" style={{ display: 'flex', gap: '16px', padding: '12px 24px', alignItems: 'center' }}>
@@ -38,6 +45,14 @@ export function HUD() {
         <BarChart2 size={16} /> 数据
       </button>
 
+      <button onClick={() => setShowResearch(true)} className="glass-pill" style={{ background: '#2E86AB' }}>
+        <Beaker size={16} /> 研发
+      </button>
+
+      <button onClick={takeScreenshot} className="glass-pill" style={{ background: '#44BBA4' }}>
+        <Camera size={16} /> 截图
+      </button>
+
       <div style={{ width: '1px', height: '24px', background: 'var(--panel-border)', margin: '0 8px' }} />
 
       <div style={{ display: 'flex', gap: '4px' }}>
@@ -53,6 +68,7 @@ export function HUD() {
       </div>
 
       {showData && <DataDashboard onClose={() => setShowData(false)} />}
+      {showResearch && <ResearchTechTree onClose={() => setShowResearch(false)} />}
     </div>
   );
 }

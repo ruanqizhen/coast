@@ -12,7 +12,11 @@ export type FacilityType =
   | 'drink_stall'
   | 'restroom'
   | 'bench'
-  | 'trash_can';
+  | 'trash_can'
+  | 'drop_tower'
+  | 'bumper_cars'
+  | 'dark_ride'
+  | 'launch_coaster';
 
 export type Category = 'thrill' | 'gentle' | 'shop' | 'facility' | 'scenery';
 
@@ -37,6 +41,7 @@ export interface PlacedFacility {
   rotation: number;
   age: number;
   breakdown: boolean; // Phase 2: Facility breakdown
+  trackPieces?: CoasterTrackPiece[]; // Phase 3: Coaster tracks
 }
 
 // Phase 2 Types below
@@ -63,7 +68,7 @@ export interface Visitor {
   money: number;
 }
 
-export type StaffType = 'cleaner' | 'mechanic';
+export type StaffType = 'cleaner' | 'mechanic' | 'security' | 'entertainer';
 
 export interface Staff {
   id: string;
@@ -82,5 +87,24 @@ export interface MonthData {
   monthIndex: number;
   revenue: number;
   expenses: number;
-  satisfaction: number;
+}
+
+// Phase 3 Types below
+
+export type TrackPieceType = 'straight' | 'climb' | 'dive' | 'loop';
+
+export interface CoasterTrackPiece {
+  x: number;
+  z: number;
+  type: TrackPieceType;
+  rotation: number;
+}
+
+export interface TechNode {
+  id: string;
+  name: string;
+  cost: number;
+  unlocked: boolean;
+  facilityIds: FacilityType[];
+  dependsOn?: string;
 }

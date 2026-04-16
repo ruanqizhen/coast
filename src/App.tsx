@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import { HUD } from './components/HUD';
 import { BuildBar } from './components/BuildBar';
+import { CoasterEditor } from './components/CoasterEditor';
 import { BabylonCanvas } from './components/BabylonCanvas';
 import { useGameState } from './store/useGameState';
 import { useParkState } from './store/useParkState';
@@ -64,9 +65,26 @@ export function App() {
      }
      window.addEventListener('onStaffSpawn', handleStaffSpawn);
 
+     const handleCoasterBuilt = (e: any) => {
+         const { typeId, pieces } = e.detail;
+         // Usually we'd check if first piece == last piece position, for now just spawn
+         useParkState.getState().addFacility({
+             instanceId: `coaster_${Date.now()}`,
+             typeId,
+             x: pieces.length > 0 ? pieces[0].x : 0,
+             z: pieces.length > 0 ? pieces[0].z : 0,
+             rotation: 0,
+             age: 0,
+             breakdown: false,
+             trackPieces: pieces
+         });
+     }
+     window.addEventListener('onCoasterBuilt', handleCoasterBuilt);
+
      return () => {
          window.removeEventListener('onFacilityUpdate', handleUpdate);
          window.removeEventListener('onStaffSpawn', handleStaffSpawn);
+         window.removeEventListener('onCoasterBuilt', handleCoasterBuilt);
      };
   }, []);
 
@@ -99,7 +117,7 @@ export function App() {
       </div>
 
       <div style={{ position: 'absolute', bottom: 20, left: '50%', transform: 'translateX(-50%)', zIndex: 10, width: '100%', maxWidth: '800px', display: 'flex', justifyContent: 'center' }}>
-        <BuildBar />
+        {useParkState(s => s.coasterBuilderMode) ? <CoasterEditor /> : <BuildBar />}
       </div>
     </div>
   );

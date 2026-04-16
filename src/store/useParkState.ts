@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { PlacedFacility, FacilityType, Visitor, Staff, VomitPoint } from '../types';
+import type { PlacedFacility, FacilityType, Visitor, Staff, VomitPoint, CoasterTrackPiece, StaffType } from '../types';
 
 interface ParkState {
   facilities: PlacedFacility[];
@@ -9,14 +9,19 @@ interface ParkState {
   
   // Placement State
   placementMode: boolean;
-  selectedFacilityToPlace: FacilityType | 'cleaner' | 'mechanic' | null;
+  selectedFacilityToPlace: FacilityType | StaffType | null;
+  coasterBuilderMode: boolean;
+  currentCoasterPieces: CoasterTrackPiece[];
   
   // Actions
   addFacility: (facility: PlacedFacility) => void;
   removeFacility: (instanceId: string) => void;
   
-  enterPlacementMode: (type: FacilityType | 'cleaner' | 'mechanic') => void;
+  enterPlacementMode: (type: FacilityType | StaffType) => void;
   exitPlacementMode: () => void;
+  toggleCoasterBuilder: (active: boolean) => void;
+  addCoasterPiece: (piece: CoasterTrackPiece) => void;
+  clearCoasterPieces: () => void;
   
   // Simulation Mutations
   setFacilities: (facilities: PlacedFacility[]) => void;
@@ -33,6 +38,8 @@ export const useParkState = create<ParkState>((set) => ({
   
   placementMode: false,
   selectedFacilityToPlace: null,
+  coasterBuilderMode: false,
+  currentCoasterPieces: [],
 
   addFacility: (facility) => set((state) => ({ facilities: [...state.facilities, facility] })),
   removeFacility: (instanceId) => set((state) => ({ 
@@ -42,6 +49,10 @@ export const useParkState = create<ParkState>((set) => ({
   enterPlacementMode: (type) => set({ placementMode: true, selectedFacilityToPlace: type }),
   exitPlacementMode: () => set({ placementMode: false, selectedFacilityToPlace: null }),
   
+  toggleCoasterBuilder: (active) => set({ coasterBuilderMode: active }),
+  addCoasterPiece: (piece) => set((state) => ({ currentCoasterPieces: [...state.currentCoasterPieces, piece] })),
+  clearCoasterPieces: () => set({ currentCoasterPieces: [] }),
+
   setFacilities: (facilities) => set({ facilities }),
   setVisitors: (visitors) => set({ visitors }),
   setStaff: (staff) => set({ staff }),

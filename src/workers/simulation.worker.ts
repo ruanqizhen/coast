@@ -95,9 +95,18 @@ function simulateDayTick() {
     self.postMessage({ type: 'WEATHER_UPDATE', payload: weather });
   }
   
-  // Breakdown mechanics
+  // Breakdown mechanics (Security lowers chance)
   facilities.forEach(fac => {
-    if (!fac.breakdown && Math.random() < 0.005) {
+    let breakdownChance = 0.005;
+    Object.values(staff).forEach(s => {
+        if (s.type === 'security') {
+            const dx = s.pos.x - (fac.x * CONSTANTS.CELL_SIZE);
+            const dz = s.pos.z - (fac.z * CONSTANTS.CELL_SIZE);
+            if (dx*dx+dz*dz < 400) breakdownChance *= 0.2; // 80% reduction if security is near
+        }
+    });
+
+    if (!fac.breakdown && Math.random() < breakdownChance) {
         self.postMessage({ type: 'FACILITY_BREAKDOWN', payload: fac.instanceId });
     }
   });
@@ -123,6 +132,24 @@ function simulateFrame() {
     v.needs.hunger += 0.01;
     v.needs.thirst += 0.01;
     v.needs.fatigue += 0.005;
+
+    // Entertainer Buff (Fun increase and Fatigue reduction) near visitors
+    let hasEntertainer = false;
+    for (const sId in staff) {
+        const s = staff[sId];
+        if (s.type === 'entertainer') {
+            const dx = s.pos.x - v.pos.x;
+            const dz = s.pos.z - v.pos.z;
+            if (dx*dx + dz*dz < 100) { // roughly 5 tiles radius
+                hasEntertainer = true;
+                break;
+            }
+        }
+    }
+    if (hasEntertainer) {
+        v.needs.fun = Math.min(100, v.needs.fun + 0.1);
+        v.needs.fatigue = Math.max(0, v.needs.fatigue - 0.05);
+    }
     
     if (v.needs.nausea > 50 && Math.random() < 0.01) {
       const pId = `vomit_${Date.now()}_${Math.floor(Math.random()*1000)}`;
@@ -231,6 +258,11 @@ function simulateFrame() {
                z: s.pos.z + (Math.random() - 0.5) * 10
              };
           }
+       } else { // security and entertainer just wander
+          s.targetPos = {
+             x: s.pos.x + (Math.random() - 0.5) * 15,
+             z: s.pos.z + (Math.random() - 0.5) * 15
+          };
        }
     }
 

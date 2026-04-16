@@ -27,9 +27,8 @@ export function DataDashboard({ onClose }: Props) {
           <button onClick={onClose}><X size={20} /></button>
         </div>
 
-        <div style={{ flex: 1, marginBottom: 16, minHeight: 0 }}>
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={data}>
+        <div style={{ marginBottom: 16, width: '100%', height: 240 }}>
+          <LineChart width={550} height={240} data={data}>
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" vertical={false} />
               <XAxis dataKey="monthIndex" tickFormatter={(m) => `第${m}月`} stroke="#888" />
               <YAxis yAxisId="left" stroke="#888" />
@@ -42,7 +41,6 @@ export function DataDashboard({ onClose }: Props) {
               <Line yAxisId="left" type="monotone" dataKey="expenses" name="支出" stroke="#E84855" strokeWidth={2} dot={false} />
               <Line yAxisId="right" type="monotone" dataKey="satisfaction" name="满意度" stroke="#F4A223" strokeWidth={2} dot={false} />
             </LineChart>
-          </ResponsiveContainer>
         </div>
         
         <div style={{ display: 'flex', gap: 16, borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: 16 }}>
