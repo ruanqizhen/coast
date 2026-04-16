@@ -1,4 +1,5 @@
 import React from 'react';
+import { createPortal } from 'react-dom';
 import { useGameState } from '../store/useGameState';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { X } from 'lucide-react';
@@ -15,11 +16,11 @@ export function DataDashboard({ onClose }: Props) {
     ? historicalData 
     : [{ monthIndex: 1, revenue: 0, expenses: 0, satisfaction: 50 }];
 
-  return (
+  return createPortal(
     <div style={{
-      position: 'absolute', top: 0, left: 0, width: '100%', height: '100%',
+      position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh',
       background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)',
-      display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100
+      display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000
     }}>
       <div className="hud-panel" style={{ width: 600, height: 400, padding: 24, display: 'flex', flexDirection: 'column' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
@@ -27,8 +28,8 @@ export function DataDashboard({ onClose }: Props) {
           <button onClick={onClose}><X size={20} /></button>
         </div>
 
-        <div style={{ marginBottom: 16, width: '100%', height: 240 }}>
-          <LineChart width={550} height={240} data={data}>
+        <div style={{ marginBottom: 16, width: '100%', height: 220, display: 'flex', justifyContent: 'center' }}>
+          <LineChart width={550} height={220} data={data} margin={{ top: 30, right: 30, left: 20, bottom: 5 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" vertical={false} />
               <XAxis dataKey="monthIndex" tickFormatter={(m) => `第${m}月`} stroke="#888" />
               <YAxis yAxisId="left" stroke="#888" />
@@ -49,6 +50,7 @@ export function DataDashboard({ onClose }: Props) {
             <div style={{ flex: 1 }}>当前满意度: <strong style={{ color: '#F4A223' }}>{rating.toFixed(1)}</strong></div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

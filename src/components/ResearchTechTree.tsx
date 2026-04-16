@@ -1,4 +1,5 @@
 import React from 'react';
+import { createPortal } from 'react-dom';
 import { useGameState } from '../store/useGameState';
 import { TECH_TREE } from '../config/techtree';
 import { X, Lock, Unlock, Beaker } from 'lucide-react';
@@ -17,11 +18,11 @@ export function ResearchTechTree({ onClose }: Props) {
     }
   };
 
-  return (
+  return createPortal(
     <div style={{
-      position: 'absolute', top: 0, left: 0, width: '100%', height: '100%',
+      position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh',
       background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)',
-      display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100
+      display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000
     }}>
       <div className="hud-panel" style={{ width: 700, height: 500, padding: 24, display: 'flex', flexDirection: 'column' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
@@ -84,6 +85,7 @@ export function ResearchTechTree({ onClose }: Props) {
            })}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
