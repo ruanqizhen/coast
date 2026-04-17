@@ -1,8 +1,9 @@
-import { Engine, Scene, Vector3, HemisphericLight, Matrix, ArcRotateCamera, AbstractMesh } from '@babylonjs/core';
+import { Engine, Scene, Vector3, HemisphericLight, ArcRotateCamera, DirectionalLight, Color3, Color4 } from '@babylonjs/core';
 import { CONSTANTS } from '../config/constants';
 import { GridManager } from './GridManager';
 import { FacilityManager } from './FacilityManager';
 import { EntityManager } from './EntityManager';
+import { RoadRenderer } from './RoadRenderer';
 
 export class SceneManager {
   private _canvas: HTMLCanvasElement;
@@ -13,39 +14,54 @@ export class SceneManager {
   public gridManager: GridManager;
   public facilityManager: FacilityManager;
   public entityManager: EntityManager;
+  public roadRenderer: RoadRenderer;
 
   constructor(canvas: HTMLCanvasElement) {
     this._canvas = canvas;
-    this._engine = new Engine(canvas, true);
+    this._engine = new Engine(canvas, true, { preserveDrawingBuffer: true, stencil: true });
     this.scene = new Scene(this._engine);
 
-    // Initial config
-    this.scene.clearColor = null;
+    // Sky background
+    this.scene.clearColor = new Color4(0.53, 0.81, 0.98, 1.0); // Sky blue
 
-    // Camera
-    // Position camera looking down at the center of the grid 
+    // Camera — isometric-style top-down view
     const gridCenter = (CONSTANTS.GRID_SIZE * CONSTANTS.CELL_SIZE) / 2;
-    this.camera = new ArcRotateCamera("camera", -Math.PI / 2, Math.PI / 4, 100, new Vector3(gridCenter, 0, gridCenter), this.scene);
+    this.camera = new ArcRotateCamera(
+      'camera',
+      -Math.PI / 2,   // alpha: look from south
+      Math.PI / 3,    // beta: ~60° angle (more isometric)
+      120,            // radius: zoom level
+      new Vector3(gridCenter, 0, gridCenter),
+      this.scene
+    );
     this.camera.attachControl(this._canvas, true);
-    this.camera.lowerRadiusLimit = 10;
-    this.camera.upperRadiusLimit = 200;
-    this.camera.wheelPrecision = 10;
+    this.camera.lowerRadiusLimit = 20;
+    this.camera.upperRadiusLimit = 300;
+    this.camera.wheelPrecision = 5;
+    this.camera.lowerBetaLimit = 0.3;  // Prevent flipping below ground
+    this.camera.upperBetaLimit = Math.PI / 2 - 0.1;
 
-    // Lighting
-    const light = new HemisphericLight("light", new Vector3(0.5, 1, 0.2), this.scene);
-    light.intensity = 0.8;
+    // Ambient lighting
+    const hemiLight = new HemisphericLight('hemi', new Vector3(0, 1, 0), this.scene);
+    hemiLight.intensity = 0.7;
+    hemiLight.groundColor = new Color3(0.4, 0.4, 0.4);
 
-    // Manage Subsystems
+    // Sun directional light for shadows
+    const sun = new DirectionalLight('sun', new Vector3(-1, -2, -1), this.scene);
+    sun.intensity = 0.5;
+
+    // Subsystems
     this.gridManager = new GridManager(this.scene);
     this.facilityManager = new FacilityManager(this.scene);
     this.entityManager = new EntityManager(this.scene);
+    this.roadRenderer = new RoadRenderer(this.scene);
 
     // Render loop
     this._engine.runRenderLoop(() => {
       this.scene.render();
     });
 
-    window.addEventListener("resize", () => {
+    window.addEventListener('resize', () => {
       this._engine.resize();
     });
   }

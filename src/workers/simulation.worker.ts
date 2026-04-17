@@ -219,7 +219,11 @@ function createVisitor() {
   const ageGroups: VisitorAgeGroup[] = ['child', 'teen', 'adult', 'family'];
   const ageGroup = ageGroups[Math.floor(Math.random() * ageGroups.length)];
 
-  const entranceX = (roadGrid.length / 2) * CONSTANTS.CELL_SIZE;
+  // Park entrance is at the bottom center of the grid
+  const gridCenter = (CONSTANTS.GRID_SIZE / 2) * CONSTANTS.CELL_SIZE;
+  // Add slight random spread so visitors don't stack exactly
+  const entranceX = gridCenter + (Math.random() - 0.5) * CONSTANTS.CELL_SIZE * 4;
+  const entranceZ = 2 + Math.random() * CONSTANTS.CELL_SIZE;
 
   // Deduct ticket
   if (ticketMode === 'paid' && ticketPrice > 0) {
@@ -229,7 +233,7 @@ function createVisitor() {
 
   visitors[vId] = {
     id: vId,
-    pos: { x: entranceX, z: 2 },
+    pos: { x: entranceX, z: entranceZ },
     targetPos: null,
     targetFacilityId: null,
     state: 'entering',

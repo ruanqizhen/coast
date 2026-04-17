@@ -44,7 +44,7 @@ export function App() {
         setVomitPoints(payload.vomitPoints);
         setVisitorsCount(Object.keys(payload.visitors).length);
       } else if (type === 'WEATHER_UPDATE') {
-        setWeather(payload);
+        setWeather(payload.current, payload.next);
       } else if (type === 'RATING_UPDATE') {
         setRating(payload);
       } else if (type === 'ECONOMY_UPDATE') {
@@ -75,6 +75,31 @@ export function App() {
      };
      window.addEventListener('onFacilityUpdate', handleUpdate);
 
+     const handleRoadPlaced = (e: any) => {
+         const { type: roadType, x, z } = e.detail;
+         const { deductMoney } = useGameState.getState();
+         const { addRoad } = useParkState.getState();
+         const cost = roadType === 'normal' ? 5 : roadType === 'wide' ? 9 : 3;
+         if (deductMoney(cost)) {
+             addRoad({ x, z, type: roadType });
+             // Sync road grid to worker
+             const roads = useParkState.getState().roads;
+             const gridSize = useGameState.getState().gridSize;
+             const flatGrid: (string | null)[][] = Array.from({ length: gridSize }, () => Array(gridSize).fill(null));
+             for (const r of roads) {
+                 if (r.x >= 0 && r.z >= 0 && r.x < gridSize && r.z < gridSize) {
+                     flatGrid[r.x][r.z] = r.type;
+                 }
+             }
+             // Also add the new one
+             if (x >= 0 && z >= 0 && x < gridSize && z < gridSize) {
+                 flatGrid[x][z] = roadType;
+             }
+             workerRef.current?.postMessage({ type: 'SYNC_ROADS', payload: flatGrid });
+         }
+     };
+     window.addEventListener('onRoadPlaced', handleRoadPlaced);
+
      const handleStaffSpawn = (e: any) => {
          if (workerRef.current) {
              workerRef.current.postMessage({ type: 'SPAWN_STAFF', payload: e.detail });
@@ -100,6 +125,7 @@ export function App() {
 
      return () => {
          window.removeEventListener('onFacilityUpdate', handleUpdate);
+         window.removeEventListener('onRoadPlaced', handleRoadPlaced);
          window.removeEventListener('onStaffSpawn', handleStaffSpawn);
          window.removeEventListener('onCoasterBuilt', handleCoasterBuilt);
      };

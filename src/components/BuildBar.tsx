@@ -5,12 +5,14 @@ import { FACILITIES } from '../config/facilities';
 import type { FacilityType, Category } from '../types';
 import { Tent, DollarSign, X, Lock } from 'lucide-react';
 
-const CATEGORIES: { id: Category | 'staff', label: string }[] = [
+const CATEGORIES: { id: Category | 'staff' | 'road', label: string }[] = [
   { id: 'thrill', label: '刺激' },
   { id: 'gentle', label: '温和' },
   { id: 'shop', label: '商业' },
   { id: 'facility', label: '基础' },
-  { id: 'staff', label: '员工' }
+  { id: 'scenery', label: '景观' },
+  { id: 'staff', label: '员工' },
+  { id: 'road', label: '道路' },
 ];
 
 const STAFF_DEFS = [
@@ -21,7 +23,7 @@ const STAFF_DEFS = [
 ];
 
 export function BuildBar() {
-  const [activeTab, setActiveTab] = useState<Category | 'staff'>('thrill');
+  const [activeTab, setActiveTab] = useState<Category | 'staff' | 'road'>('thrill');
   const enterPlacementMode = useParkState(state => state.enterPlacementMode);
   const placementMode = useParkState(state => state.placementMode);
   const selectedFacilityToPlace = useParkState(state => state.selectedFacilityToPlace);
@@ -35,19 +37,19 @@ export function BuildBar() {
 
   const displayedFacilities = Object.values(FACILITIES).filter(f => f.category === activeTab);
 
-  const handlePlacementSelection = (id: FacilityType | 'cleaner' | 'mechanic') => {
+  const handlePlacementSelection = (id: FacilityType | 'cleaner' | 'mechanic' | 'security' | 'entertainer', category: 'facility' | 'staff') => {
       if (id === 'coaster_basic' || id === 'launch_coaster') {
           clearCoasterPieces();
-          enterPlacementMode(id);
+          enterPlacementMode(id, category);
           toggleCoasterBuilder(true);
       } else {
-          enterPlacementMode(id);
+          enterPlacementMode(id, category);
       }
   };
 
   if (placementMode && selectedFacilityToPlace) {
     let name = '';
-    let cost = 0;
+    let cost: number | string = 0;
     if (selectedFacilityToPlace === 'cleaner') {
        name = '清洁工'; cost = 100;
     } else if (selectedFacilityToPlace === 'mechanic') {
@@ -56,9 +58,16 @@ export function BuildBar() {
        name = '保安'; cost = 120;
     } else if (selectedFacilityToPlace === 'entertainer') {
        name = '演艺人员'; cost = 80;
+    } else if (selectedFacilityToPlace === 'normal') {
+       name = '普通道路'; cost = '5/格';
+    } else if (selectedFacilityToPlace === 'wide') {
+       name = '宽路'; cost = '9/格';
+    } else if ((selectedFacilityToPlace as string) === 'staff') {
+       name = '员工道路'; cost = '3/格';
     } else {
        const selectedDef = FACILITIES[selectedFacilityToPlace as FacilityType];
-       name = selectedDef?.name; cost = selectedDef?.buildCost;
+       name = selectedDef?.name ?? String(selectedFacilityToPlace);
+       cost = selectedDef?.buildCost ?? 0;
     }
 
     return (
@@ -66,7 +75,7 @@ export function BuildBar() {
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <div style={{ width: 12, height: 12, borderRadius: '50%', background: 'var(--success-color)', animation: 'pulse 1s infinite' }} />
           <span>正在选择地点: <strong>{name}</strong></span>
-          <span style={{ color: 'var(--money-color)' }}>-${cost.toLocaleString()}</span>
+          <span style={{ color: 'var(--money-color)' }}>-${typeof cost === 'number' ? cost.toLocaleString() : cost}</span>
         </div>
         <button 
           onClick={exitPlacementMode}
@@ -109,7 +118,7 @@ export function BuildBar() {
               return (
                 <button
                   key={s.id}
-                  onClick={() => !isLocked && afford && handlePlacementSelection(s.id as any)}
+                  onClick={() => !isLocked && afford && handlePlacementSelection(s.id as any, 'staff')}
                   style={{
                     width: '120px', height: '100px', background: 'rgba(255,255,255,0.05)',
                     border: '1px solid var(--panel-border)', borderRadius: '8px',
@@ -140,7 +149,7 @@ export function BuildBar() {
           return (
             <button
               key={f.id}
-              onClick={() => !isLocked && afford && handlePlacementSelection(f.id)}
+              onClick={() => !isLocked && afford && handlePlacementSelection(f.id, 'facility')}
               style={{
                 width: '120px',
                 height: '100px',
@@ -172,6 +181,30 @@ export function BuildBar() {
           )
         })}
       </div>
+
+      {/* Road Placement Tab */}
+      {activeTab === 'road' && (
+        <div style={{ display: 'flex', gap: 12 }}>
+          {(['normal', 'wide', 'staff'] as const).map(type => (
+            <button
+              key={type}
+              onClick={() => enterPlacementMode(type as any, 'road')}
+              style={{
+                width: 120, height: 80, background: 'rgba(255,255,255,0.05)',
+                border: '1px solid var(--panel-border)', borderRadius: 8,
+                display: 'flex', flexDirection: 'column', alignItems: 'center',
+                justifyContent: 'center', gap: 6, cursor: 'pointer'
+              }}>
+              <div style={{ width: 40, height: 8, background: type === 'normal' ? '#888' : type === 'wide' ? '#aaa' : '#997755', borderRadius: 4 }} />
+              <div style={{ fontSize: 12 }}>{type === 'normal' ? '普通道路' : type === 'wide' ? '宽路' : '员工道路'}</div>
+              <div style={{ fontSize: 11, color: 'var(--money-color)' }}>
+                ${type === 'normal' ? 5 : type === 'wide' ? 9 : 3}/格
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
+
       <style>{`
         @keyframes pulse {
           0% { opacity: 1; }
