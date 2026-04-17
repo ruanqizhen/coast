@@ -1,0 +1,33 @@
+.message-feed {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.message-item {
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(8px);
+  color: #fff;
+  padding: 10px 16px;
+  border-radius: 8px;
+  border-left: 4px solid #4f46e5;
+  font-size: 14px;
+  font-family: 'Inter', sans-serif;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  animation: slide-in 0.3s ease-out forwards;
+  pointer-events: auto;
+  cursor: help;
+  max-width: 300px;
+}
+
+@keyframes slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}

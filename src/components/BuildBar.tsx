@@ -22,7 +22,12 @@ const STAFF_DEFS = [
 
 export function BuildBar() {
   const [activeTab, setActiveTab] = useState<Category | 'staff'>('thrill');
-  const { enterPlacementMode, placementMode, selectedFacilityToPlace, exitPlacementMode, toggleCoasterBuilder, clearCoasterPieces } = useParkState();
+  const enterPlacementMode = useParkState(state => state.enterPlacementMode);
+  const placementMode = useParkState(state => state.placementMode);
+  const selectedFacilityToPlace = useParkState(state => state.selectedFacilityToPlace);
+  const exitPlacementMode = useParkState(state => state.exitPlacementMode);
+  const toggleCoasterBuilder = useParkState(state => state.toggleCoasterBuilder);
+  const clearCoasterPieces = useParkState(state => state.clearCoasterPieces);
   const money = useGameState(state => state.money);
 
   const displayedFacilities = Object.values(FACILITIES).filter(f => f.category === activeTab);

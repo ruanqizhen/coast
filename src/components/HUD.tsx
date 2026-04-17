@@ -6,7 +6,16 @@ import { ResearchTechTree } from './ResearchTechTree';
 import { SceneManager } from '../engine/SceneManager';
 
 export function HUD() {
-  const { money, day, month, rating, visitorsCount, speed, gamePaused, weather, setSpeed, togglePause } = useGameState();
+  const money = useGameState(state => state.money);
+  const day = useGameState(state => state.day);
+  const month = useGameState(state => state.month);
+  const rating = useGameState(state => state.rating);
+  const visitorsCount = useGameState(state => state.visitorsCount);
+  const speed = useGameState(state => state.speed);
+  const gamePaused = useGameState(state => state.gamePaused);
+  const weather = useGameState(state => state.weather);
+  const setSpeed = useGameState(state => state.setSpeed);
+  const togglePause = useGameState(state => state.togglePause);
   const [showData, setShowData] = React.useState(false);
   const [showResearch, setShowResearch] = React.useState(false);
 

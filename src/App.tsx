@@ -5,12 +5,29 @@ import { CoasterEditor } from './components/CoasterEditor';
 import { BabylonCanvas } from './components/BabylonCanvas';
 import { useGameState } from './store/useGameState';
 import { useParkState } from './store/useParkState';
+import { MessageFeed } from './components/MessageFeed';
+import { MiniMap } from './components/MiniMap';
+import { FacilityInfoCard } from './components/FacilityInfoCard';
+import { VisitorInfoCard } from './components/VisitorInfoCard';
 
 export function App() {
   const workerRef = useRef<Worker | null>(null);
   
-  const { advanceDay, speed, gamePaused, addMoney, setWeather, setRating, setVisitorsCount } = useGameState();
-  const { facilities, setFacilities, setVisitors, setStaff, setVomitPoints } = useParkState();
+  const advanceDay = useGameState(state => state.advanceDay);
+  const speed = useGameState(state => state.speed);
+  const gamePaused = useGameState(state => state.gamePaused);
+  const addMoney = useGameState(state => state.addMoney);
+  const setWeather = useGameState(state => state.setWeather);
+  const setRating = useGameState(state => state.setRating);
+  const setVisitorsCount = useGameState(state => state.setVisitorsCount);
+
+  const facilities = useParkState(state => state.facilities);
+  const setFacilities = useParkState(state => state.setFacilities);
+  const setVisitors = useParkState(state => state.setVisitors);
+  const setStaff = useParkState(state => state.setStaff);
+  const setVomitPoints = useParkState(state => state.setVomitPoints);
+  const selectedFacilityId = useParkState(state => state.selectedFacilityId);
+  const selectedVisitorId = useParkState(state => state.selectedVisitorId);
 
   useEffect(() => {
     // Initialize Web Worker
@@ -118,6 +135,17 @@ export function App() {
 
       <div style={{ position: 'absolute', bottom: 20, left: '50%', transform: 'translateX(-50%)', zIndex: 10, width: '100%', maxWidth: '800px', display: 'flex', justifyContent: 'center' }}>
         {useParkState(s => s.coasterBuilderMode) ? <CoasterEditor /> : <BuildBar />}
+        {/* Message feed (bottom left) */}
+        <div style={{ position: 'absolute', bottom: 80, left: 20, zIndex: 10 }}>
+          <MessageFeed />
+        </div>
+        {/* Mini map (bottom right) */}
+        <div style={{ position: 'absolute', bottom: 20, right: 20, zIndex: 10 }}>
+          <MiniMap />
+        </div>
+        {/* Info cards */}
+        {selectedFacilityId && <FacilityInfoCard />}
+        {selectedVisitorId && <VisitorInfoCard />}
       </div>
     </div>
   );
