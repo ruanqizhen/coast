@@ -3,7 +3,7 @@ import { useParkState } from '../store/useParkState';
 import { useGameState } from '../store/useGameState';
 import { FACILITIES } from '../config/facilities';
 import type { FacilityType, Category } from '../types';
-import { Tent, DollarSign, X } from 'lucide-react';
+import { Tent, DollarSign, X, Lock } from 'lucide-react';
 
 const CATEGORIES: { id: Category | 'staff', label: string }[] = [
   { id: 'thrill', label: '刺激' },
@@ -14,10 +14,10 @@ const CATEGORIES: { id: Category | 'staff', label: string }[] = [
 ];
 
 const STAFF_DEFS = [
-  { id: 'cleaner' as const, name: '清洁工', buildCost: 100, monthlyUpkeep: 60, iconColor: '#44BBA4' },
-  { id: 'mechanic' as const, name: '修理工', buildCost: 150, monthlyUpkeep: 90, iconColor: '#2E86AB' },
-  { id: 'security' as const, name: '保安', buildCost: 120, monthlyUpkeep: 70, iconColor: '#333333' },
-  { id: 'entertainer' as const, name: '演艺人员', buildCost: 80, monthlyUpkeep: 50, iconColor: '#E84855' }
+  { id: 'cleaner' as const, name: '清洁工', buildCost: 100, monthlyUpkeep: 60, iconColor: '#44BBA4', requiresStars: 0 },
+  { id: 'mechanic' as const, name: '修理工', buildCost: 150, monthlyUpkeep: 90, iconColor: '#2E86AB', requiresStars: 0 },
+  { id: 'security' as const, name: '保安', buildCost: 120, monthlyUpkeep: 70, iconColor: '#333333', requiresStars: 0 },
+  { id: 'entertainer' as const, name: '演艺人员', buildCost: 80, monthlyUpkeep: 50, iconColor: '#E84855', requiresStars: 0 }
 ];
 
 export function BuildBar() {
@@ -28,7 +28,10 @@ export function BuildBar() {
   const exitPlacementMode = useParkState(state => state.exitPlacementMode);
   const toggleCoasterBuilder = useParkState(state => state.toggleCoasterBuilder);
   const clearCoasterPieces = useParkState(state => state.clearCoasterPieces);
+  
   const money = useGameState(state => state.money);
+  const unlockedTechs = useGameState(state => state.unlockedTechs);
+  const stars = useGameState(state => state.stars);
 
   const displayedFacilities = Object.values(FACILITIES).filter(f => f.category === activeTab);
 
@@ -99,31 +102,45 @@ export function BuildBar() {
         
         {activeTab === 'staff' 
           ? STAFF_DEFS.map(s => {
+              const starMet = stars >= (s.requiresStars || 0);
               const afford = money >= s.buildCost;
+              const isLocked = !starMet;
+              
               return (
                 <button
                   key={s.id}
-                  onClick={() => afford && handlePlacementSelection(s.id)}
+                  onClick={() => !isLocked && afford && handlePlacementSelection(s.id as any)}
                   style={{
                     width: '120px', height: '100px', background: 'rgba(255,255,255,0.05)',
                     border: '1px solid var(--panel-border)', borderRadius: '8px',
                     display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '8px',
-                    opacity: afford ? 1 : 0.4, cursor: afford ? 'pointer' : 'not-allowed'
+                    opacity: isLocked ? 0.3 : (afford ? 1 : 0.6), 
+                    cursor: isLocked ? 'not-allowed' : (afford ? 'pointer' : 'not-allowed'),
+                    position: 'relative'
                   }}>
+                  {isLocked && <div style={{ position: 'absolute', top: 4, right: 4 }}><Lock size={14} color="#aaa" /></div>}
                   <Tent size={24} color={s.iconColor} />
-                  <div style={{ fontSize: '13px', fontWeight: 500 }}>{s.name}</div>
-                  <div style={{ fontSize: '12px', color: 'var(--money-color)', display: 'flex', alignItems: 'center' }}>
-                    <DollarSign size={12} />{s.buildCost}
-                  </div>
+                  <div style={{ fontSize: '12px', fontWeight: 500 }}>{s.name}</div>
+                  {isLocked ? (
+                    <div style={{ fontSize: '10px', color: '#ff4444' }}>★{s.requiresStars} 解锁</div>
+                  ) : (
+                    <div style={{ fontSize: '12px', color: 'var(--money-color)', display: 'flex', alignItems: 'center' }}>
+                      <DollarSign size={12} />{s.buildCost}
+                    </div>
+                  )}
                 </button>
               )
           })
           : displayedFacilities.map(f => {
+          const techMet = !f.requiresTech || unlockedTechs.includes(f.requiresTech);
+          const starMet = stars >= (f.requiresStars || 0);
           const afford = money >= f.buildCost;
+          const isLocked = !techMet || !starMet;
+
           return (
             <button
               key={f.id}
-              onClick={() => afford && handlePlacementSelection(f.id)}
+              onClick={() => !isLocked && afford && handlePlacementSelection(f.id)}
               style={{
                 width: '120px',
                 height: '100px',
@@ -135,14 +152,22 @@ export function BuildBar() {
                 alignItems: 'center',
                 justifyContent: 'center',
                 gap: '8px',
-                opacity: afford ? 1 : 0.4,
-                cursor: afford ? 'pointer' : 'not-allowed'
+                opacity: isLocked ? 0.3 : (afford ? 1 : 0.6),
+                cursor: isLocked ? 'not-allowed' : (afford ? 'pointer' : 'not-allowed'),
+                position: 'relative'
               }}>
+              {isLocked && <div style={{ position: 'absolute', top: 4, right: 4 }}><Lock size={14} color="#aaa" /></div>}
               <Tent size={24} color={f.category === 'thrill' ? '#E84855' : f.category === 'shop' ? '#F4A223' : '#2E86AB'} />
-              <div style={{ fontSize: '13px', fontWeight: 500 }}>{f.name}</div>
-              <div style={{ fontSize: '12px', color: 'var(--money-color)', display: 'flex', alignItems: 'center' }}>
-                <DollarSign size={12} />{f.buildCost}
-              </div>
+              <div style={{ fontSize: '12px', fontWeight: 500, textAlign: 'center' }}>{f.name}</div>
+              {isLocked ? (
+                <div style={{ fontSize: '10px', color: '#ff4444', textAlign: 'center' }}>
+                  {!techMet ? '技术未解锁' : `★${f.requiresStars} 解锁`}
+                </div>
+              ) : (
+                <div style={{ fontSize: '12px', color: 'var(--money-color)', display: 'flex', alignItems: 'center' }}>
+                  <DollarSign size={12} />{f.buildCost}
+                </div>
+              )}
             </button>
           )
         })}

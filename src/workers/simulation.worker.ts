@@ -39,12 +39,18 @@ let loan: LoanState = createDefaultLoan();
 let monthRevenue = 0;
 let monthExpenses = 0;
 let visitorPeak = 0;
+let unlockedTechs: string[] = [];
+let parkStars = 0;
 
 // Satisfaction components
 let satExperience = 50;
 let satCleanliness = 80;
 let satValue = 60;
 let satService = 50;
+let satEnvironment = 50;
+
+// Scenery maintenance state
+let sceneryMaintenance: Record<string, number> = {}; // instanceId -> maintenance level (0-100)
 
 // ═══════════════════════════════════
 // Message Handler
@@ -73,6 +79,8 @@ self.onmessage = (e) => {
       if (payload.ticketPrice !== undefined) ticketPrice = payload.ticketPrice;
       if (payload.day !== undefined) currentDay = payload.day;
       if (payload.month !== undefined) currentMonth = payload.month;
+      if (payload.unlockedTechs !== undefined) unlockedTechs = payload.unlockedTechs;
+      if (payload.stars !== undefined) parkStars = payload.stars;
       break;
     case 'SPAWN_STAFF': {
       const sId = `staff_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
@@ -160,11 +168,15 @@ function simulateDayTick() {
   updateSatisfaction();
   updateStarRating();
   generateTrash();
+  updateSceneryDecay();
 
   // Monthly settlement
   if (currentDay % CONSTANTS.DAYS_PER_MONTH === 0) {
     doMonthlySettlement();
     currentMonth++;
+    if (unlockedTechs.includes('ops_2')) {
+        applyIntelligentPricing();
+    }
   }
 
   // Track peak
@@ -235,6 +247,7 @@ function createVisitor() {
     lastHighNauseaRide: false,
     ridesCount: 0,
     enteredOnDay: currentDay,
+    lastDecisionTime: Date.now(),
   };
 }
 
@@ -353,26 +366,50 @@ function updateSatisfaction() {
   const dirtyCount = Object.keys(vomitPoints).length + Object.keys(trashPoints).length;
   satCleanliness = Math.max(0, 100 - dirtyCount * 3);
 
-  // 3. Value for money
+  // 3. Environment (Scenery boost)
+  let totalEnvBoost = 0;
+  let sceneryCount = 0;
+  for (const fac of facilities) {
+    const def = FACILITIES[fac.typeId];
+    if (def?.category === 'scenery') {
+      sceneryCount++;
+      const maintenance = sceneryMaintenance[fac.instanceId] ?? 100;
+      totalEnvBoost += (def.envBoost || 0) * (maintenance / 100);
+    }
+  }
+  // Environment score based on scenery density and maintenance
+  satEnvironment = Math.min(100, (sceneryCount * 5) + (totalEnvBoost / Math.max(1, sceneryCount / 2)));
+
+  // 4. Value for money
   const avgMoney = vs.reduce((acc, v) => acc + v.money, 0) / vs.length;
-  const avgSpent = CONSTANTS.VISITOR_MAX_MONEY / 2 - avgMoney; // rough spent
   satValue = ticketPrice > 0 ? Math.max(20, 80 - ticketPrice * 2) : 70;
 
-  // 4. Staff service
+  // 5. Staff service
   const staffCount = Object.keys(staff).length;
   const cleanerCount = Object.values(staff).filter(s => s.type === 'cleaner').length;
   const entertainerCount = Object.values(staff).filter(s => s.type === 'entertainer').length;
   satService = Math.min(100, (cleanerCount * 15) + (entertainerCount * 20) + (staffCount * 5));
 
+  // Balanced PRD weights with environment included
   rating = Math.floor(
-    CONSTANTS.SATISFACTION_WEIGHTS.experience * satExperience +
-    CONSTANTS.SATISFACTION_WEIGHTS.cleanliness * satCleanliness +
-    CONSTANTS.SATISFACTION_WEIGHTS.value * satValue +
-    CONSTANTS.SATISFACTION_WEIGHTS.service * satService
+    0.35 * satExperience +
+    0.25 * satCleanliness +
+    0.15 * satEnvironment +
+    0.15 * satValue +
+    0.10 * satService
   );
   rating = Math.max(0, Math.min(100, rating));
 
   self.postMessage({ type: 'RATING_UPDATE', payload: rating });
+}
+
+function updateSceneryDecay() {
+  for (const fac of facilities) {
+    if (FACILITIES[fac.typeId]?.category === 'scenery') {
+      const current = sceneryMaintenance[fac.instanceId] ?? 100;
+      sceneryMaintenance[fac.instanceId] = Math.max(0, current - 2); // 2% decay per day
+    }
+  }
 }
 
 // ═══════════════════════════════════
@@ -435,6 +472,30 @@ function doMonthlySettlement() {
   }});
 }
 
+/**
+ * PRD §5.5.2: Intelligent Pricing System (ops_2)
+ * Auto-adjusts ticket prices monthly based on park rating and demand.
+ */
+function applyIntelligentPricing() {
+    for (const fac of facilities) {
+        if (!FACILITIES[fac.typeId]) continue;
+        const def = FACILITIES[fac.typeId];
+        if (def.category === 'thrill' || def.category === 'gentle') {
+            // If rating is high, we can push price up slightly
+            if (rating > 80 && fac.ticketPrice < 15) {
+                fac.ticketPrice += 1;
+            } else if (rating < 50 && fac.ticketPrice > 3) {
+                fac.ticketPrice -= 1;
+            }
+        }
+    }
+    self.postMessage({ type: 'MESSAGE', payload: {
+        id: `msg_pricing_${Date.now()}`,
+        text: '📈 智能调价系统已根据公园评级自动优化了设施价格',
+        priority: 'info', timestamp: Date.now()
+    }});
+}
+
 // ═══════════════════════════════════
 // Frame Simulation (10 FPS)
 // ═══════════════════════════════════
@@ -486,6 +547,23 @@ function simulateVisitors(dt: number) {
       }
     }
 
+    // ── Scenery proximity boost (PRD §5.1.3) ──
+    for (const fac of facilities) {
+      const def = FACILITIES[fac.typeId];
+      if (def?.category === 'scenery') {
+        const dx = fac.x * CONSTANTS.CELL_SIZE - v.pos.x;
+        const dz = fac.z * CONSTANTS.CELL_SIZE - v.pos.z;
+        const radius = (def.envRadius || 3) * CONSTANTS.CELL_SIZE;
+        if (dx * dx + dz * dz < radius * radius) {
+          const maintenance = sceneryMaintenance[fac.instanceId] ?? 100;
+          if (maintenance > 50) {
+            v.satisfaction = Math.min(100, v.satisfaction + 0.1 * dt);
+            v.needs.fun = Math.min(100, v.needs.fun + 0.05 * dt);
+          }
+        }
+      }
+    }
+
     // ── Vomiting ──
     if (v.needs.nausea > CONSTANTS.NEEDS.NAUSEA_VOMIT_THRESHOLD && v.state !== 'vomiting') {
       if (Math.random() < 0.02) {
@@ -512,7 +590,10 @@ function simulateVisitors(dt: number) {
         break;
 
       case 'idle':
-        handleVisitorDecision(v, now);
+        if (now - (v.lastDecisionTime || 0) > getDecisionFrequency()) {
+            handleVisitorDecision(v, now);
+            v.lastDecisionTime = now;
+        }
         break;
 
       case 'walking':
@@ -614,6 +695,14 @@ function handleVisitorDecision(v: Visitor, now: number) {
 
   // Wander
   randomWander(v);
+}
+
+/**
+ * PRD §5.5.2: Pathfinding/Decision efficiency optimization (ops_1)
+ * If unlocked, the decision interval for visitors is slightly reduced globally.
+ */
+function getDecisionFrequency(): number {
+    return unlockedTechs.includes('ops_1') ? 2000 : 3000;
 }
 
 function seekFacilityOfType(v: Visitor, typeId: string): boolean {
@@ -988,6 +1077,20 @@ function findStaffWork(s: Staff, now: number) {
           return;
         }
       }
+      // 3. Scenery maintenance (PRD §5.4.3: Flower watering)
+      for (const fac of facilities) {
+        if (FACILITIES[fac.typeId]?.category === 'scenery') {
+          const maintenance = sceneryMaintenance[fac.instanceId] ?? 100;
+          if (maintenance < 70 && isInPatrolZone(s, fac.x * CONSTANTS.CELL_SIZE, fac.z * CONSTANTS.CELL_SIZE)) {
+            s.targetPos = {
+              x: fac.x * CONSTANTS.CELL_SIZE + (FACILITIES[fac.typeId].sizeX * CONSTANTS.CELL_SIZE) / 2,
+              z: fac.z * CONSTANTS.CELL_SIZE + (FACILITIES[fac.typeId].sizeZ * CONSTANTS.CELL_SIZE) / 2
+            };
+            s.targetInstanceId = fac.instanceId;
+            return;
+          }
+        }
+      }
       break;
     }
 
@@ -1061,6 +1164,10 @@ function handleStaffArrival(s: Staff, now: number) {
       if (trashPoints[s.targetInstanceId]) {
         delete trashPoints[s.targetInstanceId];
       }
+      // Maintain scenery
+      if (sceneryMaintenance[s.targetInstanceId] !== undefined) {
+        sceneryMaintenance[s.targetInstanceId] = 100;
+      }
       break;
 
     case 'mechanic':
@@ -1068,6 +1175,9 @@ function handleStaffArrival(s: Staff, now: number) {
       const fac = facilities.find(f => f.instanceId === s.targetInstanceId);
       if (fac && fac.breakdown) {
         // Repair takes time
+        const baseRepairTime = CONSTANTS.MECHANIC_REPAIR_TIME;
+        const actualRepairTime = unlockedTechs.includes('service_2') ? 8000 : baseRepairTime; // Medical/Service upgrade helps toolkit
+        
         setTimeout(() => {
           const f = facilities.find(ff => ff.instanceId === s.targetInstanceId);
           if (f) {
@@ -1080,7 +1190,7 @@ function handleStaffArrival(s: Staff, now: number) {
               priority: 'info', timestamp: Date.now()
             }});
           }
-        }, CONSTANTS.MECHANIC_REPAIR_TIME / currentSpeed);
+        }, actualRepairTime / currentSpeed);
       }
       break;
 

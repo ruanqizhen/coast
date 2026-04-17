@@ -123,6 +123,22 @@ export function App() {
      }
   }, [facilities]);
 
+  const ticketMode = useGameState(state => state.ticketMode);
+  const ticketPrice = useGameState(state => state.ticketPrice);
+  const day = useGameState(state => state.day);
+  const month = useGameState(state => state.month);
+  const unlockedTechs = useGameState(state => state.unlockedTechs);
+  const stars = useGameState(state => state.stars);
+
+  useEffect(() => {
+    if (workerRef.current) {
+      workerRef.current.postMessage({
+        type: 'SYNC_SETTINGS',
+        payload: { ticketMode, ticketPrice, day, month, unlockedTechs, stars }
+      });
+    }
+  }, [ticketMode, ticketPrice, day, month, unlockedTechs, stars]);
+
   const paused = useGameState(state => state.gamePaused);
 
   return (

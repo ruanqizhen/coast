@@ -126,6 +126,7 @@ export interface Visitor {
   lastHighNauseaRide: boolean;// Did they just ride a high-nausea ride?
   ridesCount: number;         // Total rides taken this visit
   enteredOnDay: number;       // Day they entered the park
+  lastDecisionTime: number;   // Timestamp of last AI decision
 }
 
 // ──────────────────────────────────
