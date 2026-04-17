@@ -1,65 +1,143 @@
-// simulation.worker.ts
-import type { Visitor, Staff, VomitPoint, PlacedFacility } from '../types';
-import { CONSTANTS } from '../config/constants';
-import { FACILITIES } from '../config/facilities';
+// simulation.worker.ts — Complete game simulation
+// Runs in Web Worker: visitor AI (FSM + utility), staff AI, economy, weather, satisfaction, star rating
+import type {
+  Visitor, Staff, VomitPoint, TrashPoint, PlacedFacility,
+  VisitorNeeds, VisitorAgeGroup, VisitorState, Position,
+  WeatherType, GameMessage, StaffPatrolZone, RoadTile
+} from '../types';
+import { CONSTANTS, STAR_REQUIREMENTS } from '../config/constants';
+import { FACILITIES, DEFAULT_TICKET_PRICES } from '../config/facilities';
+import { findPath, buildWeightGrid } from '../engine/PathfindingSystem';
+import { calcAcceptanceRate, calcMonthlySettlement, calcDemolishRefund, createDefaultLoan } from '../engine/EconomySystem';
+import type { LoanState, MonthData } from '../types';
 
+// ═══════════════════════════════════
+// Worker State
+// ═══════════════════════════════════
 let dayInterval: number | null = null;
 let simInterval: number | null = null;
-
-const DAY_TICK_RATE = 1000;
 let currentSpeed = 1;
+const SIM_FPS = 10;
 
-// Mini-state in worker
 let visitors: Record<string, Visitor> = {};
 let staff: Record<string, Staff> = {};
 let vomitPoints: Record<string, VomitPoint> = {};
+let trashPoints: Record<string, TrashPoint> = {};
 let facilities: PlacedFacility[] = [];
+let roadGrid: (string | null)[][] = [];
+let weightGrid: (number | null)[][] = [];
 
-// Park settings
 let rating = 50;
-let weather: 'sunny' | 'cloudy' | 'rain' = 'sunny';
+let weather: WeatherType = 'sunny';
+let nextWeather: WeatherType = 'cloudy';
+let stars = 0;
+let currentDay = 1;
+let currentMonth = 1;
+let ticketMode: 'free' | 'paid' = 'free';
+let ticketPrice = 0;
+let loan: LoanState = createDefaultLoan();
+let monthRevenue = 0;
+let monthExpenses = 0;
+let visitorPeak = 0;
 
+// Satisfaction components
+let satExperience = 50;
+let satCleanliness = 80;
+let satValue = 60;
+let satService = 50;
+
+// ═══════════════════════════════════
+// Message Handler
+// ═══════════════════════════════════
 self.onmessage = (e) => {
   const { type, payload } = e.data;
-  
-  if (type === 'START') {
-    startLoops();
-  } else if (type === 'STOP') {
-    stopLoops();
-  } else if (type === 'SET_SPEED') {
-    currentSpeed = payload.speed;
-    stopLoops();
-    if (currentSpeed > 0) startLoops();
-  } else if (type === 'SYNC_FACILITIES') {
-    facilities = payload;
-  } else if (type === 'SPAWN_STAFF') {
-    const sId = `staff_${Date.now()}`;
-    staff[sId] = {
-      id: sId,
-      type: payload.type,
-      pos: { x: payload.x * CONSTANTS.CELL_SIZE, z: payload.z * CONSTANTS.CELL_SIZE },
-      targetPos: null,
-      targetInstanceId: null
-    };
+
+  switch (type) {
+    case 'START':
+      startLoops(); break;
+    case 'STOP':
+      stopLoops(); break;
+    case 'SET_SPEED':
+      currentSpeed = payload.speed;
+      stopLoops();
+      if (currentSpeed > 0) startLoops();
+      break;
+    case 'SYNC_FACILITIES':
+      facilities = payload; break;
+    case 'SYNC_ROADS':
+      roadGrid = payload;
+      weightGrid = buildWeightGrid(roadGrid, false);
+      break;
+    case 'SYNC_SETTINGS':
+      if (payload.ticketMode !== undefined) ticketMode = payload.ticketMode;
+      if (payload.ticketPrice !== undefined) ticketPrice = payload.ticketPrice;
+      if (payload.day !== undefined) currentDay = payload.day;
+      if (payload.month !== undefined) currentMonth = payload.month;
+      break;
+    case 'SPAWN_STAFF': {
+      const sId = `staff_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+      staff[sId] = {
+        id: sId,
+        type: payload.type,
+        pos: { x: payload.x * CONSTANTS.CELL_SIZE, z: payload.z * CONSTANTS.CELL_SIZE },
+        targetPos: null,
+        targetInstanceId: null,
+        patrolZone: payload.zone || {
+          x: Math.max(0, payload.x - 4),
+          z: Math.max(0, payload.z - 4),
+          w: CONSTANTS.DEFAULT_PATROL_SIZE,
+          h: CONSTANTS.DEFAULT_PATROL_SIZE,
+        },
+        energy: 100,
+        restingUntil: 0,
+        lastInspectionTime: Date.now(),
+      };
+      break;
+    }
+    case 'REMOVE_FACILITY': {
+      const refund = calcDemolishRefund(
+        facilities.find(f => f.instanceId === payload.id)!,
+        currentDay
+      );
+      facilities = facilities.filter(f => f.instanceId !== payload.id);
+      self.postMessage({ type: 'ECONOMY_UPDATE', payload: { type: 'INCOME', amount: refund, reason: 'demolish' } });
+      break;
+    }
+    case 'TAKE_LOAN':
+      if (loan.principal + payload.amount <= loan.maxLoan) {
+        loan.principal += payload.amount;
+        self.postMessage({ type: 'ECONOMY_UPDATE', payload: { type: 'INCOME', amount: payload.amount, reason: 'loan' } });
+        self.postMessage({ type: 'LOAN_UPDATE', payload: loan });
+      }
+      break;
+    case 'REPAY_LOAN': {
+      const repay = Math.min(payload.amount, loan.principal);
+      loan.principal -= repay;
+      self.postMessage({ type: 'ECONOMY_UPDATE', payload: { type: 'SPEND', amount: -repay, reason: 'loan_repay' } });
+      self.postMessage({ type: 'LOAN_UPDATE', payload: loan });
+      break;
+    }
   }
 };
 
+// ═══════════════════════════════════
+// Loops
+// ═══════════════════════════════════
 function startLoops() {
   if (dayInterval === null) {
     dayInterval = self.setInterval(() => {
       self.postMessage({ type: 'DAY_TICK' });
       simulateDayTick();
-    }, DAY_TICK_RATE / currentSpeed);
+    }, 1000 / currentSpeed);
   }
   if (simInterval === null) {
     simInterval = self.setInterval(() => {
       simulateFrame();
-      // Send batched state
-      self.postMessage({ 
-        type: 'SIM_UPDATE', 
-        payload: { visitors, staff, vomitPoints } 
+      self.postMessage({
+        type: 'SIM_UPDATE',
+        payload: { visitors, staff, vomitPoints, trashPoints }
       });
-    }, 100 / currentSpeed); // 10 FPS Simulation
+    }, (1000 / SIM_FPS) / currentSpeed);
   }
 }
 
@@ -70,222 +148,952 @@ function stopLoops() {
   simInterval = null;
 }
 
+// ═══════════════════════════════════
+// Day Tick
+// ═══════════════════════════════════
 function simulateDayTick() {
-  // Visitor spawner
+  currentDay++;
+  spawnVisitors();
+  updateWeather();
+  updateFacilityAging();
+  checkBreakdowns();
+  updateSatisfaction();
+  updateStarRating();
+  generateTrash();
+
+  // Monthly settlement
+  if (currentDay % CONSTANTS.DAYS_PER_MONTH === 0) {
+    doMonthlySettlement();
+    currentMonth++;
+  }
+
+  // Track peak
   const vCount = Object.keys(visitors).length;
-  const targetVisitors = Math.min(1000, 50 + rating * 8); // simplified logic
-  
-  if (vCount < targetVisitors && Math.random() > 0.5) {
-    const vId = `vis_${Date.now()}_${Math.floor(Math.random()*100)}`;
-    visitors[vId] = {
-      id: vId,
-      pos: { x: CONSTANTS.GRID_SIZE * CONSTANTS.CELL_SIZE / 2, z: 2 }, // Entrance at center bottom
-      targetPos: null,
-      targetFacilityId: null,
-      state: 'idle',
-      money: 50 + Math.random() * 50,
-      needs: { hunger: 0, thirst: 0, toilet: 0, fatigue: 0, nausea: 0, fun: 0 }
-    };
+  if (vCount > visitorPeak) visitorPeak = vCount;
+}
+
+// ═══════════════════════════════════
+// Visitor Spawning (PRD §5.2.6)
+// ═══════════════════════════════════
+function spawnVisitors() {
+  const vCount = Object.keys(visitors).length;
+  if (vCount >= CONSTANTS.VISITOR_HARD_CAP) return;
+
+  // Base rate = satisfaction × 0.5 per game minute
+  let spawnRate = (rating / 100) * 5;
+
+  // Weather modifier
+  spawnRate *= (CONSTANTS.WEATHER_VISITOR_MULT[weather] || 1.0);
+
+  // Ticket price modifier
+  if (ticketMode === 'paid') {
+    spawnRate *= Math.max(0.2, 1 - (ticketPrice / 10) * 0.08);
   }
 
-  // Weather cycler
-  if (Math.random() < 0.05) {
-    const rand = Math.random();
-    weather = rand < 0.5 ? 'sunny' : rand < 0.8 ? 'cloudy' : 'rain';
-    self.postMessage({ type: 'WEATHER_UPDATE', payload: weather });
+  // Soft cap reduction
+  if (vCount >= CONSTANTS.VISITOR_SOFT_CAP) {
+    spawnRate *= 0.5;
   }
-  
-  // Breakdown mechanics (Security lowers chance)
-  facilities.forEach(fac => {
-    let breakdownChance = 0.005;
-    Object.values(staff).forEach(s => {
-        if (s.type === 'security') {
-            const dx = s.pos.x - (fac.x * CONSTANTS.CELL_SIZE);
-            const dz = s.pos.z - (fac.z * CONSTANTS.CELL_SIZE);
-            if (dx*dx+dz*dz < 400) breakdownChance *= 0.2; // 80% reduction if security is near
-        }
-    });
 
-    if (!fac.breakdown && Math.random() < breakdownChance) {
-        self.postMessage({ type: 'FACILITY_BREAKDOWN', payload: fac.instanceId });
+  const count = Math.floor(spawnRate);
+  for (let i = 0; i < count; i++) {
+    if (Object.keys(visitors).length >= CONSTANTS.VISITOR_HARD_CAP) break;
+    createVisitor();
+  }
+}
+
+function createVisitor() {
+  const vId = `vis_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
+  const ageGroups: VisitorAgeGroup[] = ['child', 'teen', 'adult', 'family'];
+  const ageGroup = ageGroups[Math.floor(Math.random() * ageGroups.length)];
+
+  const entranceX = (roadGrid.length / 2) * CONSTANTS.CELL_SIZE;
+
+  // Deduct ticket
+  if (ticketMode === 'paid' && ticketPrice > 0) {
+    monthRevenue += ticketPrice;
+    self.postMessage({ type: 'ECONOMY_UPDATE', payload: { type: 'INCOME', amount: ticketPrice, reason: 'ticket' } });
+  }
+
+  visitors[vId] = {
+    id: vId,
+    pos: { x: entranceX, z: 2 },
+    targetPos: null,
+    targetFacilityId: null,
+    state: 'entering',
+    needs: { hunger: 80, thirst: 80, toilet: 10, fatigue: 10, nausea: 0, fun: 70 },
+    money: CONSTANTS.VISITOR_MIN_MONEY + Math.random() * (CONSTANTS.VISITOR_MAX_MONEY - CONSTANTS.VISITOR_MIN_MONEY),
+    satisfaction: 60,
+    ageGroup,
+    excitementPref: 1 + Math.floor(Math.random() * 10),
+    nauseaTolerance: 1 + Math.floor(Math.random() * 10),
+    patience: CONSTANTS.VISITOR_DEFAULT_PATIENCE_MIN + Math.random() * (CONSTANTS.VISITOR_DEFAULT_PATIENCE_MAX - CONSTANTS.VISITOR_DEFAULT_PATIENCE_MIN),
+    spendingWillingness: 0.5 + Math.random(),
+    path: [],
+    pathIndex: 0,
+    queueStartTime: 0,
+    lastHighNauseaRide: false,
+    ridesCount: 0,
+    enteredOnDay: currentDay,
+  };
+}
+
+// ═══════════════════════════════════
+// Weather (PRD §5.6)
+// ═══════════════════════════════════
+function updateWeather() {
+  // Change weather every ~5 days
+  if (currentDay % 5 === 0) {
+    weather = nextWeather;
+    nextWeather = rollWeather();
+    self.postMessage({ type: 'WEATHER_UPDATE', payload: { current: weather, next: nextWeather } });
+
+    // Heavy rain → pause outdoor facilities
+    if (weather === 'heavy_rain') {
+      self.postMessage({ type: 'MESSAGE', payload: {
+        id: `msg_${Date.now()}`, text: '暴雨来袭！户外设施已暂停运营',
+        priority: 'warning', timestamp: Date.now()
+      }});
     }
-  });
+    if (weather === 'holiday') {
+      self.postMessage({ type: 'MESSAGE', payload: {
+        id: `msg_${Date.now()}`, text: '🎉 节假日！游客量和消费意愿大增',
+        priority: 'milestone', timestamp: Date.now()
+      }});
+    }
+  }
+}
 
-  // Calculate Satisfaction
-  const totalNausea = Object.values(visitors).reduce((acc, v) => acc + v.needs.nausea, 0);
-  const avgNausea = vCount > 0 ? totalNausea / vCount : 0;
-  const cleanScore = 100 - (Object.keys(vomitPoints).length * 5);
-  
-  rating = Math.max(0, Math.min(100, Math.floor((cleanScore + (100 - avgNausea)) / 2)));
+function rollWeather(): WeatherType {
+  const r = Math.random();
+  let cumulative = 0;
+  for (const [w, p] of Object.entries(CONSTANTS.WEATHER_PROBS)) {
+    cumulative += p;
+    if (r < cumulative) return w as WeatherType;
+  }
+  return 'sunny';
+}
+
+// ═══════════════════════════════════
+// Facility Aging & Breakdowns (PRD §5.4.3)
+// ═══════════════════════════════════
+function updateFacilityAging() {
+  for (const fac of facilities) {
+    fac.age++;
+  }
+}
+
+function checkBreakdowns() {
+  for (const fac of facilities) {
+    if (fac.breakdown) continue;
+    const def = FACILITIES[fac.typeId];
+    if (!def || def.category === 'scenery' || def.category === 'facility') continue;
+
+    // Breakdown formula from PRD
+    let breakdownChance = fac.age * 0.001 + fac.totalRides * 0.0005;
+
+    // Track complexity bonus for coasters
+    if (fac.trackPieces) {
+      for (const piece of fac.trackPieces) {
+        const stats = { straight: 0, climb: 0.001, dive: 0.003, loop: 0.008, super_loop: 0.015 };
+        breakdownChance += stats[piece.type] || 0;
+      }
+    }
+
+    // Security nearby reduces chance
+    for (const s of Object.values(staff)) {
+      if (s.type === 'security') {
+        const dx = s.pos.x - fac.x * CONSTANTS.CELL_SIZE;
+        const dz = s.pos.z - fac.z * CONSTANTS.CELL_SIZE;
+        if (dx * dx + dz * dz < 400) breakdownChance *= 0.2;
+      }
+    }
+
+    if (Math.random() < breakdownChance * 0.1) { // Scale down for per-day check
+      fac.breakdown = true;
+      self.postMessage({ type: 'FACILITY_BREAKDOWN', payload: fac.instanceId });
+      self.postMessage({ type: 'MESSAGE', payload: {
+        id: `msg_${Date.now()}`, text: `⚠️ ${def.name} 发生故障！`,
+        priority: 'critical', timestamp: Date.now(),
+        targetId: fac.instanceId,
+        targetPos: { x: fac.x * CONSTANTS.CELL_SIZE, z: fac.z * CONSTANTS.CELL_SIZE }
+      }});
+    }
+  }
+}
+
+// ═══════════════════════════════════
+// Trash Generation
+// ═══════════════════════════════════
+function generateTrash() {
+  const vCount = Object.keys(visitors).length;
+  const trashCount = Math.floor(vCount * 0.02);
+  for (let i = 0; i < trashCount; i++) {
+    const vs = Object.values(visitors);
+    if (vs.length === 0) break;
+    const v = vs[Math.floor(Math.random() * vs.length)];
+    const tId = `trash_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
+    trashPoints[tId] = { id: tId, pos: { ...v.pos }, amount: 1 };
+  }
+}
+
+// ═══════════════════════════════════
+// Satisfaction (PRD §5.3.3)
+// ═══════════════════════════════════
+function updateSatisfaction() {
+  const vs = Object.values(visitors);
+  if (vs.length === 0) { rating = 50; return; }
+
+  // 1. Experience score (avg fun / rides)
+  let totalFun = 0;
+  for (const v of vs) totalFun += v.needs.fun;
+  satExperience = Math.min(100, (totalFun / vs.length));
+
+  // 2. Cleanliness (inverse of vomit + trash density)
+  const dirtyCount = Object.keys(vomitPoints).length + Object.keys(trashPoints).length;
+  satCleanliness = Math.max(0, 100 - dirtyCount * 3);
+
+  // 3. Value for money
+  const avgMoney = vs.reduce((acc, v) => acc + v.money, 0) / vs.length;
+  const avgSpent = CONSTANTS.VISITOR_MAX_MONEY / 2 - avgMoney; // rough spent
+  satValue = ticketPrice > 0 ? Math.max(20, 80 - ticketPrice * 2) : 70;
+
+  // 4. Staff service
+  const staffCount = Object.keys(staff).length;
+  const cleanerCount = Object.values(staff).filter(s => s.type === 'cleaner').length;
+  const entertainerCount = Object.values(staff).filter(s => s.type === 'entertainer').length;
+  satService = Math.min(100, (cleanerCount * 15) + (entertainerCount * 20) + (staffCount * 5));
+
+  rating = Math.floor(
+    CONSTANTS.SATISFACTION_WEIGHTS.experience * satExperience +
+    CONSTANTS.SATISFACTION_WEIGHTS.cleanliness * satCleanliness +
+    CONSTANTS.SATISFACTION_WEIGHTS.value * satValue +
+    CONSTANTS.SATISFACTION_WEIGHTS.service * satService
+  );
+  rating = Math.max(0, Math.min(100, rating));
+
   self.postMessage({ type: 'RATING_UPDATE', payload: rating });
 }
 
-function simulateFrame() {
-  // Constants for movement
-  const speed = 2.0;
+// ═══════════════════════════════════
+// Star Rating (PRD §4.4)
+// ═══════════════════════════════════
+function updateStarRating() {
+  const vCount = Object.keys(visitors).length;
+  let newStars = 0;
+  for (const req of STAR_REQUIREMENTS) {
+    if (rating >= req.satisfactionMin && vCount >= req.visitorMin) {
+      newStars = req.stars;
+    }
+  }
+  if (newStars > stars) {
+    stars = newStars;
+    self.postMessage({ type: 'STAR_UPDATE', payload: stars });
+    self.postMessage({ type: 'MESSAGE', payload: {
+      id: `msg_${Date.now()}`, text: `🌟 恭喜！公园已达到 ${'★'.repeat(stars)} 评级！`,
+      priority: 'milestone', timestamp: Date.now()
+    }});
+  }
+}
 
-  // Simulate Visitors
+// ═══════════════════════════════════
+// Monthly Settlement
+// ═══════════════════════════════════
+function doMonthlySettlement() {
+  const staffCounts: Record<string, number> = {};
+  for (const s of Object.values(staff)) {
+    staffCounts[s.type] = (staffCounts[s.type] || 0) + 1;
+  }
+
+  const settlement = calcMonthlySettlement(
+    facilities, staffCounts, loan, 0, monthRevenue
+  );
+
+  self.postMessage({ type: 'MONTH_SETTLEMENT', payload: {
+    ...settlement,
+    monthIndex: currentMonth,
+    visitorPeak,
+    satisfaction: rating,
+  }});
+
+  // Deduct expenses
+  self.postMessage({ type: 'ECONOMY_UPDATE', payload: {
+    type: 'SPEND', amount: -settlement.totalExpenses, reason: 'monthly'
+  }});
+
+  // Loan interest accrues
+  loan.principal += loan.principal * loan.monthlyRate;
+
+  monthRevenue = 0;
+  monthExpenses = 0;
+  visitorPeak = 0;
+
+  self.postMessage({ type: 'MESSAGE', payload: {
+    id: `msg_${Date.now()}`,
+    text: `📊 月度结算: 收入 $${settlement.totalRevenue.toLocaleString()} | 支出 $${settlement.totalExpenses.toLocaleString()}`,
+    priority: 'info', timestamp: Date.now()
+  }});
+}
+
+// ═══════════════════════════════════
+// Frame Simulation (10 FPS)
+// ═══════════════════════════════════
+function simulateFrame() {
+  const dt = 0.1 / currentSpeed; // seconds per sim frame
+  simulateVisitors(dt);
+  simulateStaff(dt);
+}
+
+// ═══════════════════════════════════
+// Visitor Simulation (PRD §5.2)
+// ═══════════════════════════════════
+function simulateVisitors(dt: number) {
+  const speed = 2.0;
+  const now = Date.now();
+
   for (const vId in visitors) {
     const v = visitors[vId];
-    
-    // Needs decay
-    v.needs.hunger += 0.01;
-    v.needs.thirst += 0.01;
-    v.needs.fatigue += 0.005;
 
-    // Entertainer Buff (Fun increase and Fatigue reduction) near visitors
-    let hasEntertainer = false;
-    for (const sId in staff) {
-        const s = staff[sId];
-        if (s.type === 'entertainer') {
-            const dx = s.pos.x - v.pos.x;
-            const dz = s.pos.z - v.pos.z;
-            if (dx*dx + dz*dz < 100) { // roughly 5 tiles radius
-                hasEntertainer = true;
-                break;
-            }
+    // ── Needs decay ──
+    v.needs.hunger = Math.max(0, v.needs.hunger - CONSTANTS.NEEDS.HUNGER_DECAY * dt);
+    v.needs.thirst = Math.max(0, v.needs.thirst - CONSTANTS.NEEDS.THIRST_DECAY * dt);
+    v.needs.toilet = Math.min(100, v.needs.toilet + CONSTANTS.NEEDS.TOILET_DECAY * dt);
+    v.needs.fatigue = Math.min(100, v.needs.fatigue + CONSTANTS.NEEDS.FATIGUE_DECAY * dt);
+    v.needs.fun = Math.max(0, v.needs.fun - CONSTANTS.NEEDS.FUN_DECAY * dt);
+
+    // ── Entertainer buff ──
+    for (const s of Object.values(staff)) {
+      if (s.type === 'entertainer' && s.energy > 10) {
+        const dx = s.pos.x - v.pos.x;
+        const dz = s.pos.z - v.pos.z;
+        if (dx * dx + dz * dz < (CONSTANTS.ENTERTAINER_RADIUS * CONSTANTS.CELL_SIZE) ** 2) {
+          v.needs.fun = Math.min(100, v.needs.fun + 0.5 * dt);
+          v.needs.fatigue = Math.max(0, v.needs.fatigue - 0.2 * dt);
         }
-    }
-    if (hasEntertainer) {
-        v.needs.fun = Math.min(100, v.needs.fun + 0.1);
-        v.needs.fatigue = Math.max(0, v.needs.fatigue - 0.05);
-    }
-    
-    if (v.needs.nausea > 50 && Math.random() < 0.01) {
-      const pId = `vomit_${Date.now()}_${Math.floor(Math.random()*1000)}`;
-      vomitPoints[pId] = { id: pId, pos: { ...v.pos } };
-      v.needs.nausea = 0; // Reset after vomiting
+      }
     }
 
-    if (v.needs.hunger > 100 || v.needs.thirst > 100 || v.needs.fatigue > 100) {
+    // ── Weather effects ──
+    if (weather === 'light_rain') {
+      // Check if under weather tent
+      const underTent = facilities.some(f =>
+        f.typeId === 'weather_tent' &&
+        Math.abs(v.pos.x - f.x * CONSTANTS.CELL_SIZE) < 6 &&
+        Math.abs(v.pos.z - f.z * CONSTANTS.CELL_SIZE) < 6
+      );
+      if (!underTent) {
+        v.satisfaction = Math.max(0, v.satisfaction - 0.3 * dt);
+      }
+    }
+
+    // ── Vomiting ──
+    if (v.needs.nausea > CONSTANTS.NEEDS.NAUSEA_VOMIT_THRESHOLD && v.state !== 'vomiting') {
+      if (Math.random() < 0.02) {
+        v.state = 'vomiting';
+        const pId = `vomit_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
+        vomitPoints[pId] = { id: pId, pos: { ...v.pos } };
+        v.needs.nausea = Math.max(0, v.needs.nausea - 30);
+        v.satisfaction -= 10;
+        setTimeout(() => { if (visitors[vId]) visitors[vId].state = 'idle'; }, 3000);
+        continue;
+      }
+    }
+
+    // ── Leave conditions ──
+    if (v.satisfaction < 20 || v.money <= 0 ||
+        (v.needs.hunger <= 0 && v.needs.thirst <= 0)) {
       v.state = 'leaving';
     }
 
-    if (v.state === 'idle') {
-      // Find a facility
-      if (facilities.length > 0 && Math.random() < 0.1) {
-         const target = facilities[Math.floor(Math.random() * facilities.length)];
-         const w = FACILITIES[target.typeId].sizeX * CONSTANTS.CELL_SIZE;
-         const h = FACILITIES[target.typeId].sizeZ * CONSTANTS.CELL_SIZE;
-         
-         v.targetFacilityId = target.instanceId;
-         v.targetPos = {
-             x: (target.x * CONSTANTS.CELL_SIZE) + w/2,
-             z: (target.z * CONSTANTS.CELL_SIZE) + h/2
-         };
-         v.state = 'walking';
-      } else {
-         // Random wander
-         v.targetPos = {
-             x: v.pos.x + (Math.random() - 0.5) * 20,
-             z: v.pos.z + (Math.random() - 0.5) * 20
-         };
-         v.state = 'walking';
-      }
-    } else if (v.state === 'walking' && v.targetPos) {
-      const dx = v.targetPos.x - v.pos.x;
-      const dz = v.targetPos.z - v.pos.z;
-      const dist = Math.sqrt(dx*dx + dz*dz);
-      
-      if (dist < speed) {
-        v.pos = { ...v.targetPos };
-        if (v.targetFacilityId) {
-            // Arrived at ride
-            v.state = 'riding';
-            const fDef = FACILITIES[facilities.find(f => f.instanceId === v.targetFacilityId)!.typeId];
-            
-            // Apply effects
-            v.needs.fun = Math.min(100, v.needs.fun + (fDef.excitement || 0) * 10);
-            v.needs.nausea += (fDef.nausea || 0) * 5;
-            
-            // Spend money
-            self.postMessage({ type: 'ECONOMY_UPDATE', payload: { type: 'SPEND', amount: 5 } });
-            
-            // Delay and leave
-            setTimeout(() => {
-               if(visitors[vId]) visitors[vId].state = 'idle';
-            }, 2000);
-        } else {
-            v.state = 'idle';
+    // ── State Machine ──
+    switch (v.state) {
+      case 'entering':
+        v.state = 'idle';
+        break;
+
+      case 'idle':
+        handleVisitorDecision(v, now);
+        break;
+
+      case 'walking':
+        moveAlongPath(v, speed);
+        break;
+
+      case 'queuing': {
+        // Check patience
+        const waitTime = (now - v.queueStartTime) / 1000;
+        if (waitTime > v.patience) {
+          v.state = 'idle';
+          v.satisfaction -= 5;
+          v.targetFacilityId = null;
+          v.targetPos = null;
         }
-      } else {
-        v.pos.x += (dx / dist) * speed;
-        v.pos.z += (dz / dist) * speed;
+        // Facility processes them — handled elsewhere in ride tick
+        break;
       }
-    } else if (v.state === 'leaving') {
-      const entrance = { x: CONSTANTS.GRID_SIZE * CONSTANTS.CELL_SIZE / 2, z: 2 };
-      const dx = entrance.x - v.pos.x;
-      const dz = entrance.z - v.pos.z;
-      const dist = Math.sqrt(dx*dx + dz*dz);
-      if (dist < speed) {
-        delete visitors[vId];
-      } else {
-        v.pos.x += (dx / dist) * speed;
-        v.pos.z += (dz / dist) * speed;
+
+      case 'riding':
+        // Handled by timeout set when ride starts
+        break;
+
+      case 'eating':
+        // Handled by timeout
+        break;
+
+      case 'resting':
+        v.needs.fatigue = Math.max(0, v.needs.fatigue - 2 * dt);
+        v.needs.nausea = Math.max(0, v.needs.nausea - 1 * dt);
+        if (v.needs.fatigue < 20 && v.needs.nausea < 20) {
+          v.state = 'idle';
+        }
+        break;
+
+      case 'first_aid':
+        v.needs.nausea = Math.max(0, v.needs.nausea - 5 * dt);
+        if (v.needs.nausea < 10) {
+          v.state = 'idle';
+        }
+        break;
+
+      case 'vomiting':
+        // Handled by timeout set above  
+        break;
+
+      case 'leaving': {
+        const gridSize = roadGrid.length || CONSTANTS.GRID_SIZE;
+        const entrance = { x: (gridSize / 2) * CONSTANTS.CELL_SIZE, z: 2 };
+        const dx = entrance.x - v.pos.x;
+        const dz = entrance.z - v.pos.z;
+        const dist = Math.sqrt(dx * dx + dz * dz);
+        if (dist < speed) {
+          delete visitors[vId];
+        } else {
+          v.pos.x += (dx / dist) * speed;
+          v.pos.z += (dz / dist) * speed;
+        }
+        break;
       }
     }
   }
+}
 
-  // Simulate Staff
+// ═══════════════════════════════════
+// Visitor Decision (PRD §5.2.4)
+// ═══════════════════════════════════
+function handleVisitorDecision(v: Visitor, now: number) {
+  // Check urgent needs first
+  if (v.needs.nausea > CONSTANTS.NEEDS.NAUSEA_FIRSTAID_THRESHOLD) {
+    seekFacilityOfType(v, 'first_aid');
+    return;
+  }
+  if (v.needs.toilet > CONSTANTS.NEEDS.TOILET_THRESHOLD) {
+    seekFacilityOfType(v, 'restroom');
+    return;
+  }
+  if (v.needs.fatigue > CONSTANTS.NEEDS.FATIGUE_THRESHOLD) {
+    seekFacilityOfType(v, 'bench');
+    if (v.state === 'walking') { v.state = 'walking'; return; }
+    // No bench found; rest in place
+    v.state = 'resting';
+    return;
+  }
+  if (v.needs.hunger < CONSTANTS.NEEDS.HUNGER_THRESHOLD) {
+    seekFacilityOfType(v, 'burger_stall') || seekFacilityOfType(v, 'restaurant');
+    return;
+  }
+  if (v.needs.thirst < CONSTANTS.NEEDS.THIRST_THRESHOLD) {
+    seekFacilityOfType(v, 'drink_stall');
+    return;
+  }
+
+  // Fun seeking — utility scoring
+  if (v.needs.fun < CONSTANTS.NEEDS.FUN_THRESHOLD || Math.random() < 0.15) {
+    seekBestRide(v);
+    return;
+  }
+
+  // Wander
+  randomWander(v);
+}
+
+function seekFacilityOfType(v: Visitor, typeId: string): boolean {
+  const candidates = facilities.filter(f => {
+    if (f.typeId !== typeId) return false;
+    if (f.breakdown) return false;
+    if (weather === 'heavy_rain' && FACILITIES[f.typeId]?.isOutdoor) return false;
+    return true;
+  });
+
+  if (candidates.length === 0) return false;
+
+  // Find nearest
+  let nearest = candidates[0];
+  let nearestDist = Infinity;
+  for (const c of candidates) {
+    const dx = c.x * CONSTANTS.CELL_SIZE - v.pos.x;
+    const dz = c.z * CONSTANTS.CELL_SIZE - v.pos.z;
+    const dist = dx * dx + dz * dz;
+    if (dist < nearestDist) {
+      nearestDist = dist;
+      nearest = c;
+    }
+  }
+
+  setVisitorTarget(v, nearest);
+  return true;
+}
+
+function seekBestRide(v: Visitor) {
+  const scanRange = CONSTANTS.VISITOR_SCAN_RADIUS * CONSTANTS.CELL_SIZE;
+  const prefs = CONSTANTS.AGE_PREFERENCES[v.ageGroup];
+  let bestFac: PlacedFacility | null = null;
+  let bestUtility = -Infinity;
+
+  for (const fac of facilities) {
+    const def = FACILITIES[fac.typeId];
+    if (!def || fac.breakdown) continue;
+    if (def.category !== 'thrill' && def.category !== 'gentle') continue;
+    if (weather === 'heavy_rain' && def.isOutdoor) continue;
+
+    const dx = fac.x * CONSTANTS.CELL_SIZE - v.pos.x;
+    const dz = fac.z * CONSTANTS.CELL_SIZE - v.pos.z;
+    const dist = Math.sqrt(dx * dx + dz * dz);
+
+    // Preference matching
+    let prefMultiplier = 1.0;
+    if (def.category === 'thrill') {
+      prefMultiplier = (prefs?.thrillWeight || 1.0) * (v.excitementPref / 5);
+    } else if (def.category === 'gentle') {
+      prefMultiplier = (prefs?.gentleWeight || 1.0);
+    }
+
+    // Queue estimate (rough)
+    const queueLen = countQueueFor(fac.instanceId);
+    const queueTimeWeight = 1 + queueLen * 0.2;
+
+    // Needs urgency
+    const funUrgency = Math.max(1, (100 - v.needs.fun) / 20);
+
+    // Utility = appeal × preference / (distance × queue) × urgency
+    const appeal = def.appeal || 50;
+    const utility = (appeal * prefMultiplier) / (Math.max(1, dist / CONSTANTS.CELL_SIZE) * queueTimeWeight) * funUrgency;
+
+    // Price check
+    const price = fac.ticketPrice || DEFAULT_TICKET_PRICES[fac.typeId] || 5;
+    if (price > v.money) continue;
+
+    // Acceptance rate
+    const acceptance = calcAcceptanceRate(fac.typeId, price);
+    if (Math.random() > acceptance * v.spendingWillingness) continue;
+
+    if (utility > bestUtility) {
+      bestUtility = utility;
+      bestFac = fac;
+    }
+  }
+
+  if (bestFac) {
+    setVisitorTarget(v, bestFac);
+  } else {
+    randomWander(v);
+  }
+}
+
+function countQueueFor(facilityId: string): number {
+  let count = 0;
+  for (const v of Object.values(visitors)) {
+    if (v.targetFacilityId === facilityId && (v.state === 'queuing' || v.state === 'walking')) {
+      count++;
+    }
+  }
+  return count;
+}
+
+function setVisitorTarget(v: Visitor, fac: PlacedFacility) {
+  const def = FACILITIES[fac.typeId];
+  if (!def) return;
+
+  const targetX = fac.x + Math.floor(def.sizeX / 2);
+  const targetZ = fac.z + Math.floor(def.sizeZ / 2);
+
+  // A* pathfinding
+  const startGrid = {
+    x: Math.floor(v.pos.x / CONSTANTS.CELL_SIZE),
+    z: Math.floor(v.pos.z / CONSTANTS.CELL_SIZE)
+  };
+
+  if (weightGrid.length > 0) {
+    const path = findPath(weightGrid, startGrid, { x: targetX, z: targetZ });
+    if (path.length > 0) {
+      v.path = path.map(p => ({ x: p.x * CONSTANTS.CELL_SIZE + CONSTANTS.CELL_SIZE / 2, z: p.z * CONSTANTS.CELL_SIZE + CONSTANTS.CELL_SIZE / 2 }));
+      v.pathIndex = 0;
+      v.targetFacilityId = fac.instanceId;
+      v.state = 'walking';
+      return;
+    }
+  }
+
+  // Fallback: direct walk
+  v.targetPos = {
+    x: fac.x * CONSTANTS.CELL_SIZE + (def.sizeX * CONSTANTS.CELL_SIZE) / 2,
+    z: fac.z * CONSTANTS.CELL_SIZE + (def.sizeZ * CONSTANTS.CELL_SIZE) / 2,
+  };
+  v.targetFacilityId = fac.instanceId;
+  v.state = 'walking';
+}
+
+function randomWander(v: Visitor) {
+  const gridSize = roadGrid.length || CONSTANTS.GRID_SIZE;
+  v.targetPos = {
+    x: Math.max(2, Math.min(gridSize * CONSTANTS.CELL_SIZE - 2, v.pos.x + (Math.random() - 0.5) * 20)),
+    z: Math.max(2, Math.min(gridSize * CONSTANTS.CELL_SIZE - 2, v.pos.z + (Math.random() - 0.5) * 20)),
+  };
+  v.targetFacilityId = null;
+  v.path = [];
+  v.state = 'walking';
+}
+
+function moveAlongPath(v: Visitor, speed: number) {
+  // Use A* path if available
+  if (v.path.length > 0 && v.pathIndex < v.path.length) {
+    const target = v.path[v.pathIndex];
+    const dx = target.x - v.pos.x;
+    const dz = target.z - v.pos.z;
+    const dist = Math.sqrt(dx * dx + dz * dz);
+
+    if (dist < speed) {
+      v.pos = { ...target };
+      v.pathIndex++;
+
+      if (v.pathIndex >= v.path.length) {
+        // Arrived at destination
+        arriveAtTarget(v);
+      }
+    } else {
+      v.pos.x += (dx / dist) * speed;
+      v.pos.z += (dz / dist) * speed;
+    }
+    return;
+  }
+
+  // Fallback to direct movement
+  if (v.targetPos) {
+    const dx = v.targetPos.x - v.pos.x;
+    const dz = v.targetPos.z - v.pos.z;
+    const dist = Math.sqrt(dx * dx + dz * dz);
+
+    if (dist < speed) {
+      v.pos = { ...v.targetPos };
+      arriveAtTarget(v);
+    } else {
+      v.pos.x += (dx / dist) * speed;
+      v.pos.z += (dz / dist) * speed;
+    }
+  } else {
+    v.state = 'idle';
+  }
+}
+
+function arriveAtTarget(v: Visitor) {
+  if (!v.targetFacilityId) {
+    v.state = 'idle';
+    return;
+  }
+
+  const fac = facilities.find(f => f.instanceId === v.targetFacilityId);
+  if (!fac) { v.state = 'idle'; v.targetFacilityId = null; return; }
+
+  const def = FACILITIES[fac.typeId];
+  if (!def) { v.state = 'idle'; return; }
+
+  // Check capacity
+  const queueLen = countQueueFor(fac.instanceId);
+  const capacity = def.capacity || 20;
+
+  if (queueLen > capacity * 2) {
+    v.satisfaction -= 3;
+    v.state = 'idle';
+    v.targetFacilityId = null;
+    return;
+  }
+
+  // Handle by facility type
+  if (def.category === 'thrill' || def.category === 'gentle') {
+    // Queuing
+    v.state = 'queuing';
+    v.queueStartTime = Date.now();
+
+    // Process ride after simulated queue wait
+    const waitMs = Math.min(queueLen * 2000, 10000);
+    setTimeout(() => {
+      if (!visitors[v.id] || visitors[v.id].state !== 'queuing') return;
+
+      const currentFac = facilities.find(f => f.instanceId === v.targetFacilityId);
+      if (!currentFac || currentFac.breakdown) {
+        v.state = 'idle';
+        v.satisfaction -= 5;
+        return;
+      }
+
+      // Start riding
+      v.state = 'riding';
+      const price = currentFac.ticketPrice || DEFAULT_TICKET_PRICES[currentFac.typeId] || 5;
+      v.money -= price;
+      monthRevenue += price;
+      self.postMessage({ type: 'ECONOMY_UPDATE', payload: { type: 'INCOME', amount: price, reason: 'ride' } });
+
+      // Apply effects
+      const excitement = def.excitement || 0;
+      const nauseaVal = def.nausea || 0;
+      v.needs.fun = Math.min(100, v.needs.fun + excitement * 8);
+      const nauseaIncrease = nauseaVal * (1 - v.nauseaTolerance / 10);
+      v.needs.nausea = Math.min(100, v.needs.nausea + nauseaIncrease * 3);
+
+      // Consecutive high nausea
+      if (nauseaVal > 5 && v.lastHighNauseaRide) {
+        v.needs.nausea = Math.min(100, v.needs.nausea + 20);
+      }
+      v.lastHighNauseaRide = nauseaVal > 5;
+
+      v.satisfaction += excitement * 2;
+      v.ridesCount++;
+      currentFac.totalRides++;
+
+      // Ride duration
+      const duration = def.rideDuration || 15000;
+      setTimeout(() => {
+        if (visitors[v.id]) {
+          visitors[v.id].state = 'idle';
+          visitors[v.id].targetFacilityId = null;
+        }
+      }, Math.min(duration / currentSpeed, 5000));
+    }, waitMs / currentSpeed);
+
+  } else if (def.category === 'shop') {
+    // Eating/drinking
+    v.state = 'eating';
+    const price = fac.ticketPrice || DEFAULT_TICKET_PRICES[fac.typeId] || 4;
+    v.money -= price;
+    monthRevenue += price;
+    self.postMessage({ type: 'ECONOMY_UPDATE', payload: { type: 'INCOME', amount: price, reason: 'shop' } });
+
+    if (fac.typeId === 'burger_stall' || fac.typeId === 'restaurant') {
+      v.needs.hunger = Math.min(100, v.needs.hunger + 50);
+    }
+    if (fac.typeId === 'drink_stall') {
+      v.needs.thirst = Math.min(100, v.needs.thirst + 60);
+    }
+    if (fac.typeId === 'restaurant') {
+      v.needs.hunger = Math.min(100, v.needs.hunger + 70);
+      v.needs.thirst = Math.min(100, v.needs.thirst + 30);
+    }
+
+    setTimeout(() => {
+      if (visitors[v.id]) {
+        visitors[v.id].state = 'idle';
+        visitors[v.id].targetFacilityId = null;
+      }
+    }, 3000 / currentSpeed);
+
+  } else if (fac.typeId === 'restroom') {
+    v.needs.toilet = 0;
+    v.state = 'idle';
+    v.targetFacilityId = null;
+
+  } else if (fac.typeId === 'bench') {
+    v.state = 'resting';
+    v.targetFacilityId = null;
+
+  } else if (fac.typeId === 'first_aid') {
+    v.state = 'first_aid';
+    v.targetFacilityId = null;
+
+  } else {
+    v.state = 'idle';
+    v.targetFacilityId = null;
+  }
+}
+
+// ═══════════════════════════════════
+// Staff Simulation (PRD §5.4)
+// ═══════════════════════════════════
+function simulateStaff(dt: number) {
+  const speed = 2.5;
+  const now = Date.now();
+
   for (const sId in staff) {
     const s = staff[sId];
+
+    // Entertainer rest cycle
+    if (s.type === 'entertainer') {
+      if (s.restingUntil > now) continue;
+      s.energy = Math.max(0, s.energy - 0.05 * dt);
+      if (s.energy <= 0) {
+        s.restingUntil = now + CONSTANTS.ENTERTAINER_REST_DURATION;
+        s.energy = 100;
+        s.targetPos = null;
+        continue;
+      }
+    }
+
     if (!s.targetPos) {
-       // Find work
-       if (s.type === 'cleaner') {
-          const vomits = Object.values(vomitPoints);
-          if (vomits.length > 0) {
-             const target = vomits[0];
-             s.targetPos = target.pos;
-             s.targetInstanceId = target.id;
-          } else {
-             // Wander
-             s.targetPos = {
-               x: s.pos.x + (Math.random() - 0.5) * 10,
-               z: s.pos.z + (Math.random() - 0.5) * 10
-             };
-          }
-       } else if (s.type === 'mechanic') {
-          const broken = facilities.filter(f => f.breakdown);
-          if (broken.length > 0) {
-              const target = broken[0];
-              const w = FACILITIES[target.typeId].sizeX * CONSTANTS.CELL_SIZE;
-              const h = FACILITIES[target.typeId].sizeZ * CONSTANTS.CELL_SIZE;
-              s.targetPos = { x: target.x * CONSTANTS.CELL_SIZE + w/2, z: target.z * CONSTANTS.CELL_SIZE + h/2 };
-              s.targetInstanceId = target.instanceId;
-          } else {
-             s.targetPos = {
-               x: s.pos.x + (Math.random() - 0.5) * 10,
-               z: s.pos.z + (Math.random() - 0.5) * 10
-             };
-          }
-       } else { // security and entertainer just wander
-          s.targetPos = {
-             x: s.pos.x + (Math.random() - 0.5) * 15,
-             z: s.pos.z + (Math.random() - 0.5) * 15
-          };
-       }
+      findStaffWork(s, now);
     }
 
     if (s.targetPos) {
       const dx = s.targetPos.x - s.pos.x;
       const dz = s.targetPos.z - s.pos.z;
-      const dist = Math.sqrt(dx*dx + dz*dz);
-      
-      if (dist < speed * 1.5) { // Staff faster
+      const dist = Math.sqrt(dx * dx + dz * dz);
+      const staffSpeed = (CONSTANTS.STAFF_SPEED[s.type] || 1.0) * speed;
+
+      if (dist < staffSpeed) {
         s.pos = { ...s.targetPos };
-        
-        if (s.type === 'cleaner' && s.targetInstanceId) {
-           delete vomitPoints[s.targetInstanceId];
-        } else if (s.type === 'mechanic' && s.targetInstanceId) {
-           self.postMessage({ type: 'FACILITY_FIXED', payload: s.targetInstanceId });
-        }
-        
+        handleStaffArrival(s, now);
         s.targetPos = null;
         s.targetInstanceId = null;
       } else {
-        s.pos.x += (dx / dist) * speed * 1.5;
-        s.pos.z += (dz / dist) * speed * 1.5;
+        s.pos.x += (dx / dist) * staffSpeed;
+        s.pos.z += (dz / dist) * staffSpeed;
       }
     }
+  }
+}
+
+function isInPatrolZone(s: Staff, x: number, z: number): boolean {
+  const gx = x / CONSTANTS.CELL_SIZE;
+  const gz = z / CONSTANTS.CELL_SIZE;
+  return gx >= s.patrolZone.x && gx < s.patrolZone.x + s.patrolZone.w &&
+         gz >= s.patrolZone.z && gz < s.patrolZone.z + s.patrolZone.h;
+}
+
+function findStaffWork(s: Staff, now: number) {
+  const zone = s.patrolZone;
+
+  switch (s.type) {
+    case 'cleaner': {
+      // Priority: vomit > full trash > regular trash
+      // 1. Vomit in zone
+      for (const v of Object.values(vomitPoints)) {
+        if (isInPatrolZone(s, v.pos.x, v.pos.z)) {
+          s.targetPos = { ...v.pos };
+          s.targetInstanceId = v.id;
+          return;
+        }
+      }
+      // 2. Trash in zone
+      for (const t of Object.values(trashPoints)) {
+        if (isInPatrolZone(s, t.pos.x, t.pos.z)) {
+          s.targetPos = { ...t.pos };
+          s.targetInstanceId = t.id;
+          return;
+        }
+      }
+      break;
+    }
+
+    case 'mechanic': {
+      // Check if inspection is due
+      if (now - s.lastInspectionTime > CONSTANTS.MECHANIC_INSPECT_INTERVAL) {
+        // Find broken facilities in zone
+        const broken = facilities.filter(f =>
+          f.breakdown && isInPatrolZone(s, f.x * CONSTANTS.CELL_SIZE, f.z * CONSTANTS.CELL_SIZE)
+        );
+        if (broken.length > 0) {
+          const target = broken[0];
+          const def = FACILITIES[target.typeId];
+          if (def) {
+            s.targetPos = {
+              x: target.x * CONSTANTS.CELL_SIZE + (def.sizeX * CONSTANTS.CELL_SIZE) / 2,
+              z: target.z * CONSTANTS.CELL_SIZE + (def.sizeZ * CONSTANTS.CELL_SIZE) / 2,
+            };
+            s.targetInstanceId = target.instanceId;
+            return;
+          }
+        }
+        s.lastInspectionTime = now;
+      }
+      break;
+    }
+
+    case 'security': {
+      // Check for vandalism (based on crowding × teen ratio)
+      const vInZone = Object.values(visitors).filter(v =>
+        isInPatrolZone(s, v.pos.x, v.pos.z)
+      );
+      const teens = vInZone.filter(v => v.ageGroup === 'teen').length;
+      const crowding = vInZone.length / (zone.w * zone.h + 1);
+      const vandalChance = crowding * 0.01 * (teens / (vInZone.length || 1));
+
+      if (Math.random() < vandalChance) {
+        // Find nearest teen
+        if (teens > 0) {
+          const teen = vInZone.find(v => v.ageGroup === 'teen')!;
+          s.targetPos = { ...teen.pos };
+          s.targetInstanceId = teen.id;
+          return;
+        }
+      }
+      break;
+    }
+
+    case 'entertainer':
+      // Already handled: just wander in zone
+      break;
+  }
+
+  // Wander within patrol zone
+  s.targetPos = {
+    x: (zone.x + Math.random() * zone.w) * CONSTANTS.CELL_SIZE,
+    z: (zone.z + Math.random() * zone.h) * CONSTANTS.CELL_SIZE,
+  };
+}
+
+function handleStaffArrival(s: Staff, now: number) {
+  if (!s.targetInstanceId) return;
+
+  switch (s.type) {
+    case 'cleaner':
+      // Clean vomit
+      if (vomitPoints[s.targetInstanceId]) {
+        delete vomitPoints[s.targetInstanceId];
+      }
+      // Clean trash
+      if (trashPoints[s.targetInstanceId]) {
+        delete trashPoints[s.targetInstanceId];
+      }
+      break;
+
+    case 'mechanic':
+      // Repair facility
+      const fac = facilities.find(f => f.instanceId === s.targetInstanceId);
+      if (fac && fac.breakdown) {
+        // Repair takes time
+        setTimeout(() => {
+          const f = facilities.find(ff => ff.instanceId === s.targetInstanceId);
+          if (f) {
+            f.breakdown = false;
+            f.lastRepairDay = currentDay;
+            self.postMessage({ type: 'FACILITY_FIXED', payload: f.instanceId });
+            self.postMessage({ type: 'MESSAGE', payload: {
+              id: `msg_${Date.now()}`,
+              text: `🔧 ${FACILITIES[f.typeId]?.name || '设施'} 已修复`,
+              priority: 'info', timestamp: Date.now()
+            }});
+          }
+        }, CONSTANTS.MECHANIC_REPAIR_TIME / currentSpeed);
+      }
+      break;
+
+    case 'security':
+      // Prevent vandalism — deter nearby teens
+      const nearby = Object.values(visitors).filter(v => {
+        const dx = v.pos.x - s.pos.x;
+        const dz = v.pos.z - s.pos.z;
+        return dx * dx + dz * dz < 100 && v.ageGroup === 'teen';
+      });
+      for (const v of nearby) {
+        v.satisfaction -= 2; // Deterrent effect
+      }
+      break;
   }
 }
