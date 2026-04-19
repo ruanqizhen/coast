@@ -1,4 +1,4 @@
-import { Scene, MeshBuilder, StandardMaterial, Color3, Vector3, TransformNode, Mesh } from '@babylonjs/core';
+import { Scene, MeshBuilder, StandardMaterial, Color3, Vector3, TransformNode, Mesh, ShadowGenerator, CSG } from '@babylonjs/core';
 import { CONSTANTS } from '../config/constants';
 import { useParkState } from '../store/useParkState';
 import type { PlacedFacility, FacilityDef } from '../types';
@@ -6,43 +6,57 @@ import { FACILITIES } from '../config/facilities';
 
 export class FacilityManager {
   private scene: Scene;
+  private shadowGen: ShadowGenerator;
   private meshes: Map<string, TransformNode | Mesh> = new Map();
 
-  constructor(scene: Scene) {
+  constructor(scene: Scene, shadowGen: ShadowGenerator) {
     this.scene = scene;
+    this.shadowGen = shadowGen;
     
-    // Subscribe to state changes to spawn meshes when react state updates
     useParkState.subscribe((state, prevState) => {
-      // Find new facilities
       const added = state.facilities.filter(
         f1 => !prevState.facilities.some(f2 => f1.instanceId === f2.instanceId)
       );
-      // Find removed facilities
       const removed = prevState.facilities.filter(
         f1 => !state.facilities.some(f2 => f1.instanceId === f2.instanceId)
       );
-      
       added.forEach(fac => this.spawnFacility(fac));
       removed.forEach(fac => this.despawnFacility(fac.instanceId));
     });
+  }
+
+  private registerShadows(mesh: Mesh) {
+      if (this.shadowGen) {
+          this.shadowGen.addShadowCaster(mesh, true);
+      }
+      mesh.receiveShadows = true;
+  }
+
+  private getPBR(name: string, color: Color3, metallic: number = 0.1, roughness: number = 0.8): StandardMaterial {
+      const mat = new StandardMaterial(name, this.scene);
+      mat.diffuseColor = color;
+      if (metallic > 0.5) {
+          mat.specularColor = new Color3(0.5, 0.5, 0.5);
+          mat.specularPower = 32;
+      } else {
+          mat.specularColor = new Color3(0.1, 0.1, 0.1);
+          mat.specularPower = 16;
+      }
+      return mat;
   }
 
   private spawnFacility(facility: PlacedFacility) {
     const def = FACILITIES[facility.typeId];
     if (!def) return;
     
-    // Phase 3: Coaster Track Pieces
     if (facility.trackPieces && facility.trackPieces.length > 0) {
         const rootMesh = this.createCoasterTrack(facility);
         this.meshes.set(facility.instanceId, rootMesh);
         return;
     }
 
-    // Normal Facility
     const w = def.sizeX * CONSTANTS.CELL_SIZE;
     const h = def.sizeZ * CONSTANTS.CELL_SIZE;
-    
-    // Position it centrally over its grid cells
     const posX = (facility.x * CONSTANTS.CELL_SIZE) + w / 2;
     const posZ = (facility.z * CONSTANTS.CELL_SIZE) + h / 2;
     
@@ -79,19 +93,13 @@ export class FacilityManager {
       facility.trackPieces!.forEach((piece, idx) => {
           let height = piece.type === 'climb' ? 4 : piece.type === 'dive' ? 2 : piece.type === 'loop' ? 8 : 2;
           const mesh = MeshBuilder.CreateBox(`${facility.instanceId}_piece_${idx}`, { 
-              width: CONSTANTS.CELL_SIZE, depth: CONSTANTS.CELL_SIZE, height 
+              width: CONSTANTS.CELL_SIZE * 0.8, depth: CONSTANTS.CELL_SIZE * 0.8, height 
           }, this.scene);
           
-          mesh.position = new Vector3(
-              piece.x * CONSTANTS.CELL_SIZE, 
-              height / 2, 
-              piece.z * CONSTANTS.CELL_SIZE
-          );
-          
-          const mat = new StandardMaterial("mat_" + facility.instanceId + "_" + idx, this.scene);
-          mat.diffuseColor = Color3.FromHexString("#E84855"); // Thrill Red
-          mesh.material = mat;
+          mesh.position = new Vector3(piece.x * CONSTANTS.CELL_SIZE, height / 2, piece.z * CONSTANTS.CELL_SIZE);
+          mesh.material = this.getPBR("trkMat", Color3.FromHexString("#E84855"), 0.8, 0.3); // Metallic Red
           mesh.parent = parent;
+          this.registerShadows(mesh);
       });
       return parent;
   }
@@ -99,34 +107,54 @@ export class FacilityManager {
   private createShopMesh(def: FacilityDef, parent: TransformNode) {
       const w = def.sizeX * CONSTANTS.CELL_SIZE;
       const d = def.sizeZ * CONSTANTS.CELL_SIZE;
-      
-      // Base block
-      const baseMat = new StandardMaterial("mat_base_" + def.id, this.scene);
-      baseMat.diffuseColor = new Color3(0.85, 0.85, 0.85);
-      const base = MeshBuilder.CreateBox("base", { width: w, depth: d, height: 2 }, this.scene);
-      base.position.y = 1;
-      base.material = baseMat;
-      base.parent = parent;
+      const h = 2.5;
+
+      // Create outer box
+      const outerBox = MeshBuilder.CreateBox("outer", { width: w, depth: d, height: h }, this.scene);
+      outerBox.position.y = h / 2;
+
+      // Create inner box for hollow
+      const innerBox = MeshBuilder.CreateBox("inner", { width: w * 0.9, depth: d * 0.9, height: h * 0.9 }, this.scene);
+      innerBox.position.y = h / 2;
+
+      // Create window cutter
+      const cutter = MeshBuilder.CreateBox("cutter", { width: w * 0.8, depth: d * 1.1, height: 1.2 }, this.scene);
+      cutter.position.y = 1.6;
+
+      const csgOuter = CSG.FromMesh(outerBox);
+      const csgInner = CSG.FromMesh(innerBox);
+      const csgCutter = CSG.FromMesh(cutter);
+
+      // Subtract inner room and front window
+      let csgResult = csgOuter.subtract(csgInner).subtract(csgCutter);
+
+      let finalBase = csgResult.toMesh(def.id + "base", null, this.scene);
+      finalBase.material = this.getPBR("shopBase", new Color3(0.9, 0.9, 0.9), 0.05, 0.9);
+      finalBase.parent = parent;
+      this.registerShadows(finalBase);
+
+      outerBox.dispose();
+      innerBox.dispose();
+      cutter.dispose();
+
+      // Inside counter counter
+      const counter = MeshBuilder.CreateBox("cntr", { width: w * 0.8, depth: d * 0.2, height: 1 }, this.scene);
+      counter.position.y = 0.5;
+      counter.position.z = - (d / 2) * 0.8;
+      counter.material = this.getPBR("cntrMat", new Color3(0.4, 0.2, 0.1), 0.1, 0.8);
+      counter.parent = parent;
+      this.registerShadows(counter);
 
       // Awning / Roof
-      const roofMat = new StandardMaterial("mat_roof_" + def.id, this.scene);
-      if (def.id === 'burger_stall') roofMat.diffuseColor = new Color3(0.9, 0.2, 0.2);
-      else if (def.id === 'drink_stall') roofMat.diffuseColor = new Color3(0.2, 0.5, 0.9);
-      else roofMat.diffuseColor = new Color3(0.8, 0.6, 0.2); // Restaurant
-      
-      const roof = MeshBuilder.CreateCylinder("roof", { diameter: Math.max(w, d) * 1.2, height: 1.5, tessellation: 4 }, this.scene);
+      const roofColor = def.id === 'burger_stall' ? new Color3(0.9, 0.2, 0.2) : 
+                        def.id === 'drink_stall' ? new Color3(0.2, 0.5, 0.9) : new Color3(0.8, 0.6, 0.2);
+                        
+      const roof = MeshBuilder.CreateCylinder("roof", { diameter: Math.max(w, d) * 1.3, height: 1.5, tessellation: 4 }, this.scene);
       roof.rotation.y = Math.PI / 4;
-      roof.position.y = 2.75;
-      roof.material = roofMat;
+      roof.position.y = h + 0.75;
+      roof.material = this.getPBR("roofMat", roofColor, 0.1, 0.8);
       roof.parent = parent;
-      
-      // Simple cut-out window representation
-      const window = MeshBuilder.CreateBox("window", { width: w * 0.8, depth: d * 1.05, height: 1 }, this.scene);
-      window.position.y = 1.5;
-      const winMat = new StandardMaterial("win", this.scene);
-      winMat.diffuseColor = new Color3(0.2, 0.2, 0.2);
-      window.material = winMat;
-      window.parent = parent;
+      this.registerShadows(roof);
   }
 
   private createGentleMesh(typeId: string, def: FacilityDef, parent: TransformNode) {
@@ -134,58 +162,72 @@ export class FacilityManager {
       const h = def.sizeZ * CONSTANTS.CELL_SIZE;
 
       if (typeId === 'ferris_wheel') {
-          const supportMat = new StandardMaterial("sup", this.scene);
-          supportMat.diffuseColor = new Color3(0.8, 0.8, 0.8);
+          const maxDim = Math.min(w, h);
+          const r = (maxDim + 2) / 2;
           
-          const maxDim = Math.min(w, h); // e.g. 10
+          const supMat = this.getPBR("sup", new Color3(0.8, 0.8, 0.8), 0.9, 0.4);
           
-          const leftSupport = MeshBuilder.CreateCylinder("lsup", { height: maxDim + 2, diameterTop: 0.5, diameterBottom: 2 }, this.scene);
-          leftSupport.position = new Vector3(-w/3, (maxDim + 2)/2, 0);
-          leftSupport.material = supportMat;
-          leftSupport.parent = parent;
+          // Truss supports
+          const createTrussLeg = (name: string, pos: Vector3, rotZ: number) => {
+              const leg = MeshBuilder.CreateCylinder(name, { height: r * 2.2, diameterTop: 0.3, diameterBottom: 0.8 }, this.scene);
+              leg.position = pos;
+              leg.rotation.z = rotZ;
+              leg.material = supMat;
+              leg.parent = parent;
+              this.registerShadows(leg);
+          };
 
-          const rightSupport = MeshBuilder.CreateCylinder("rsup", { height: maxDim + 2, diameterTop: 0.5, diameterBottom: 2 }, this.scene);
-          rightSupport.position = new Vector3(w/3, (maxDim + 2)/2, 0);
-          rightSupport.material = supportMat;
-          rightSupport.parent = parent;
+          createTrussLeg("l1", new Vector3(-w/3, r, 2),  0.2);
+          createTrussLeg("l2", new Vector3(-w/3, r, -2), -0.2);
+          createTrussLeg("r1", new Vector3(w/3, r, 2),   0.2);
+          createTrussLeg("r2", new Vector3(w/3, r, -2),  -0.2);
 
-          const wheelMat = new StandardMaterial("wheel", this.scene);
-          wheelMat.diffuseColor = new Color3(0.9, 0.2, 0.2);
-          const wheel = MeshBuilder.CreateTorus("wheel", { diameter: maxDim + 2, thickness: 0.6, tessellation: 32 }, this.scene);
-          wheel.position.y = (maxDim + 2)/2;
+          const wheelMat = this.getPBR("wheel", new Color3(0.9, 0.2, 0.2), 0.8, 0.3);
+          const wheel = MeshBuilder.CreateTorus("wheel", { diameter: maxDim + 2, thickness: 0.4, tessellation: 64 }, this.scene);
+          wheel.position.y = r + 2;
           wheel.rotation.z = Math.PI / 2;
           wheel.material = wheelMat;
           wheel.parent = parent;
+          this.registerShadows(wheel);
           
-          // Cabins
+          // Spokes
           for (let i = 0; i < 8; i++) {
-              const angle = (Math.PI * 2 / 8) * i;
-              const radius = (maxDim + 2) / 2;
-              const cabin = MeshBuilder.CreateBox("cabin", { size: 1.5 }, this.scene);
-              cabin.position = new Vector3(0, ((maxDim + 2)/2) + Math.cos(angle)*radius, Math.sin(angle)*radius);
-              const cabinMat = new StandardMaterial("cmat", this.scene);
-              cabinMat.diffuseColor = new Color3(0.2, 0.6, 0.9);
-              cabin.material = cabinMat;
+              const spoke = MeshBuilder.CreateCylinder("spoke", { height: maxDim+2, diameter: 0.1}, this.scene);
+              spoke.rotation.z = Math.PI/2;
+              spoke.rotation.y = (Math.PI / 8) * i;
+              spoke.position.y = r + 2;
+              spoke.material = wheelMat;
+              spoke.parent = parent;
+              this.registerShadows(spoke);
+          }
+
+          const cabMat = this.getPBR("cab", new Color3(0.2, 0.6, 0.9), 0.4, 0.6);
+          for (let i = 0; i < 16; i++) {
+              const angle = (Math.PI * 2 / 16) * i;
+              const cabin = MeshBuilder.CreateSphere("cabin", { diameter: 1.5, segments: 16 }, this.scene);
+              cabin.position = new Vector3(0, (r+2) + Math.cos(angle)*r, Math.sin(angle)*r);
+              cabin.material = cabMat;
               cabin.parent = parent;
+              this.registerShadows(cabin);
           }
       } else if (typeId === 'merry_go_round') {
-          const baseMat = new StandardMaterial("baseMat", this.scene);
-          baseMat.diffuseColor = new Color3(0.8, 0.3, 0.3);
           const base = MeshBuilder.CreateCylinder("base", { diameter: w, height: 1 }, this.scene);
           base.position.y = 0.5;
-          base.material = baseMat;
+          base.material = this.getPBR("baseMat", new Color3(0.8, 0.3, 0.3), 0.1, 0.8);
           base.parent = parent;
+          this.registerShadows(base);
 
-          const roofMat = new StandardMaterial("roofMat", this.scene);
-          roofMat.diffuseColor = new Color3(0.9, 0.8, 0.2);
           const roof = MeshBuilder.CreateCylinder("roof", { diameterTop: 0, diameterBottom: w*1.1, height: 3 }, this.scene);
           roof.position.y = 4.5;
-          roof.material = roofMat;
+          roof.material = this.getPBR("rMat", new Color3(0.9, 0.8, 0.2), 0.5, 0.5);
           roof.parent = parent;
+          this.registerShadows(roof);
           
-          const center = MeshBuilder.CreateCylinder("center", { diameter: 1, height: 4 }, this.scene);
+          const center = MeshBuilder.CreateCylinder("center", { diameter: 1.5, height: 4 }, this.scene);
           center.position.y = 2.5;
+          center.material = this.getPBR("cMat", new Color3(0.9, 0.9, 0.9), 1, 0.2); // Mirror center
           center.parent = parent;
+          this.registerShadows(center);
       } else {
           this.createGenericBox(def, parent, new Color3(0.2, 0.6, 0.9));
       }
@@ -193,38 +235,58 @@ export class FacilityManager {
 
   private createThrillMesh(typeId: string, def: FacilityDef, parent: TransformNode) {
       if (typeId === 'drop_tower') {
-          const towerMat = new StandardMaterial("tmat", this.scene);
-          towerMat.diffuseColor = new Color3(0.7, 0.7, 0.7);
-          const tower = MeshBuilder.CreateCylinder("tower", { diameter: 1.5, height: 18 }, this.scene);
-          tower.position.y = 9;
-          tower.material = towerMat;
-          tower.parent = parent;
+          const tMat = this.getPBR("tmat", new Color3(0.7, 0.7, 0.7), 0.9, 0.3);
           
-          const ring = MeshBuilder.CreateTorus("ring", { diameter: 3.5, thickness: 0.8 }, this.scene);
+          // Lattice tower
+          for (let i=0; i<4; i++) {
+              const post = MeshBuilder.CreateCylinder("post", { diameter: 0.4, height: 24 }, this.scene);
+              post.position.x = (i%2===0) ? -0.8 : 0.8;
+              post.position.z = (i<2) ? -0.8 : 0.8;
+              post.position.y = 12;
+              post.material = tMat;
+              post.parent = parent;
+              this.registerShadows(post);
+          }
+          for (let y=2; y<23; y+=2) {
+              const brace = MeshBuilder.CreateBox("br", { width: 2, height: 0.2, depth: 2}, this.scene);
+              brace.position.y = y;
+              brace.material = tMat;
+              brace.parent = parent;
+              this.registerShadows(brace);
+          }
+          
+          const ring = MeshBuilder.CreateTorus("ring", { diameter: 4, thickness: 1.2 }, this.scene);
           ring.position.y = 4;
-          const ringMat = new StandardMaterial("rmat", this.scene);
-          ringMat.diffuseColor = new Color3(0.9, 0.5, 0.2);
-          ring.material = ringMat;
+          ring.material = this.getPBR("rmat", new Color3(0.9, 0.5, 0.2), 0.2, 0.6);
           ring.parent = parent;
+          this.registerShadows(ring);
       } else if (typeId === 'pirate_ship') {
-          const supMat = new StandardMaterial("smat", this.scene);
-          supMat.diffuseColor = new Color3(0.8, 0.8, 0.8);
-          const leftSup = MeshBuilder.CreateCylinder("lsup", { height: 10, diameterTop: 0.5, diameterBottom: 1.5 }, this.scene);
-          leftSup.position = new Vector3(-2, 5, 0);
-          leftSup.material = supMat;
-          leftSup.parent = parent;
+          const sMat = this.getPBR("smat", new Color3(0.8, 0.8, 0.8), 1.0, 0.4);
           
-          const rightSup = MeshBuilder.CreateCylinder("rsup", { height: 10, diameterTop: 0.5, diameterBottom: 1.5 }, this.scene);
-          rightSup.position = new Vector3(2, 5, 0);
-          rightSup.material = supMat;
-          rightSup.parent = parent;
+          const lSup = MeshBuilder.CreateCylinder("lsup", { height: 12, diameterTop: 0.5, diameterBottom: 2 }, this.scene);
+          lSup.position = new Vector3(-2.5, 6, 0);
+          lSup.material = sMat;
+          lSup.parent = parent;
+          this.registerShadows(lSup);
           
-          const boat = MeshBuilder.CreateBox("boat", { width: 3, height: 2, depth: 6 }, this.scene);
-          boat.position.y = 2;
-          const bMat = new StandardMaterial("bmat", this.scene);
-          bMat.diffuseColor = new Color3(0.6, 0.4, 0.2);
-          boat.material = bMat;
+          const rSup = MeshBuilder.CreateCylinder("rsup", { height: 12, diameterTop: 0.5, diameterBottom: 2 }, this.scene);
+          rSup.position = new Vector3(2.5, 6, 0);
+          rSup.material = sMat;
+          rSup.parent = parent;
+          this.registerShadows(rSup);
+          
+          const axis = MeshBuilder.CreateCylinder("axis", { height: 6, diameter: 0.4}, this.scene);
+          axis.rotation.z = Math.PI/2;
+          axis.position.y = 12;
+          axis.material = sMat;
+          axis.parent = parent;
+          this.registerShadows(axis);
+
+          const boat = MeshBuilder.CreateBox("boat", { width: 3.5, height: 2.5, depth: 8 }, this.scene);
+          boat.position.y = 3;
+          boat.material = this.getPBR("bmat", new Color3(0.5, 0.3, 0.1), 0.1, 0.9); // wood
           boat.parent = parent;
+          this.registerShadows(boat);
       } else {
           this.createGenericBox(def, parent, new Color3(0.9, 0.2, 0.2));
       }
@@ -234,68 +296,128 @@ export class FacilityManager {
       const w = def.sizeX * CONSTANTS.CELL_SIZE;
       const d = def.sizeZ * CONSTANTS.CELL_SIZE;
 
-      const mMat = new StandardMaterial("fmat", this.scene);
-      mMat.diffuseColor = typeId === 'first_aid' ? new Color3(0.9, 0.9, 0.9) : new Color3(0.6, 0.7, 0.6);
+      // Outer house
+      const outer = MeshBuilder.CreateBox("out", { width: w*0.9, depth: d*0.9, height: 3 }, this.scene);
+      outer.position.y = 1.5;
 
-      const base = MeshBuilder.CreateBox("base", { width: w, depth: d, height: 3 }, this.scene);
-      base.position.y = 1.5;
-      base.material = mMat;
-      base.parent = parent;
+      const inner = MeshBuilder.CreateBox("in", { width: w*0.8, depth: d*0.8, height: 3 }, this.scene);
+      inner.position.y = 1.5;
 
-      const roof = MeshBuilder.CreateCylinder("roof", { diameter: Math.max(w,d)*1.2, height: 1.5, tessellation: 4 }, this.scene);
+      // Doors
+      const door = MeshBuilder.CreateBox("door", { width: 1.5, depth: d+1, height: 2 }, this.scene);
+      door.position.y = 1;
+
+      const csgOut = CSG.FromMesh(outer);
+      const csgIn = CSG.FromMesh(inner);
+      const csgDoor = CSG.FromMesh(door);
+
+      const res = csgOut.subtract(csgIn).subtract(csgDoor);
+      const finalFac = res.toMesh("fac", null, this.scene);
+      finalFac.material = this.getPBR("fmat", typeId==='first_aid' ? new Color3(0.9, 0.9, 0.9) : new Color3(0.7,0.6,0.5), 0, 0.9);
+      finalFac.parent = parent;
+      this.registerShadows(finalFac);
+
+      outer.dispose(); inner.dispose(); door.dispose();
+
+      const roof = MeshBuilder.CreateCylinder("roof", { diameter: Math.max(w,d)*1.1, height: 1.5, tessellation: 4 }, this.scene);
       roof.rotation.y = Math.PI / 4;
       roof.position.y = 3.75;
-      const rMat = new StandardMaterial("rmat", this.scene);
-      rMat.diffuseColor = typeId === 'first_aid' ? new Color3(0.8, 0.2, 0.2) : new Color3(0.4, 0.4, 0.4);
-      roof.material = rMat;
+      roof.material = this.getPBR("rmat", typeId==='first_aid' ? new Color3(0.8, 0.2, 0.2) : new Color3(0.3, 0.3, 0.3), 0.1, 0.8);
       roof.parent = parent;
+      this.registerShadows(roof);
   }
 
   private createSceneryMesh(typeId: string, def: FacilityDef, parent: TransformNode) {
       const w = def.sizeX * CONSTANTS.CELL_SIZE;
-      
       if (typeId === 'bench') {
-          const plank = MeshBuilder.CreateBox("plank", { width: 1.8, depth: 0.6, height: 0.1 }, this.scene);
-          plank.position.y = 0.5;
-          const pMat = new StandardMaterial("pMat", this.scene);
-          pMat.diffuseColor = new Color3(0.6, 0.4, 0.2);
-          plank.material = pMat;
-          plank.parent = parent;
-          
-          const leg1 = MeshBuilder.CreateBox("leg1", { width: 0.1, depth: 0.5, height: 0.5 }, this.scene);
-          leg1.position = new Vector3(-0.7, 0.25, 0);
-          leg1.parent = parent;
-          
-          const leg2 = MeshBuilder.CreateBox("leg2", { width: 0.1, depth: 0.5, height: 0.5 }, this.scene);
-          leg2.position = new Vector3(0.7, 0.25, 0);
-          leg2.parent = parent;
+          const woodMat = this.getPBR("wood", new Color3(0.5, 0.3, 0.1), 0.0, 0.9);
+          const metalMat = this.getPBR("met", new Color3(0.15, 0.15, 0.15), 0.8, 0.5);
+
+          // Wood slats for seat
+          for(let i=0; i<3; i++) {
+              const slat = MeshBuilder.CreateBox("slat", { width: 1.8, depth: 0.15, height: 0.05 }, this.scene);
+              slat.position = new Vector3(0, 0.4, -0.2 + i * 0.2);
+              slat.material = woodMat;
+              slat.parent = parent;
+              this.registerShadows(slat);
+          }
+          // Wood slats for backrest
+          for(let i=0; i<2; i++) {
+              const back = MeshBuilder.CreateBox("back", { width: 1.8, depth: 0.15, height: 0.05 }, this.scene);
+              back.rotation.x = -Math.PI / 8;
+              back.position = new Vector3(0, 0.55 + i * 0.18, 0.35 + i * 0.05);
+              back.material = woodMat;
+              back.parent = parent;
+              this.registerShadows(back);
+          }
+
+          // Frame / Legs
+          const createFrame = (x: number) => {
+              const leg = MeshBuilder.CreateBox("leg", { width: 0.08, depth: 0.5, height: 0.4 }, this.scene);
+              leg.position = new Vector3(x, 0.2, 0);
+              leg.material = metalMat;
+              leg.parent = parent;
+              this.registerShadows(leg);
+
+              const backSupport = MeshBuilder.CreateBox("bsup", { width: 0.08, depth: 0.08, height: 0.5 }, this.scene);
+              backSupport.rotation.x = -Math.PI / 8;
+              backSupport.position = new Vector3(x, 0.6, 0.4);
+              backSupport.material = metalMat;
+              backSupport.parent = parent;
+              this.registerShadows(backSupport);
+              
+              const armRest = MeshBuilder.CreateBox("arm", { width: 0.08, depth: 0.6, height: 0.05 }, this.scene);
+              armRest.position = new Vector3(x, 0.5, 0);
+              armRest.material = metalMat;
+              armRest.parent = parent;
+              this.registerShadows(armRest);
+          };
+          createFrame(-0.8);
+          createFrame(0.8);
       } else if (typeId === 'trash_can') {
-          const can = MeshBuilder.CreateCylinder("can", { diameter: 0.8, height: 1.2 }, this.scene);
-          can.position.y = 0.6;
-          const cMat = new StandardMaterial("cMat", this.scene);
-          cMat.diffuseColor = new Color3(0.3, 0.3, 0.4);
-          can.material = cMat;
-          can.parent = parent;
+          const mMat = this.getPBR("mMat", new Color3(0.2, 0.2, 0.2), 0.9, 0.5); // Dark metal
+          
+          const base = MeshBuilder.CreateCylinder("base", { diameter: 0.8, height: 0.05 }, this.scene);
+          base.position.y = 0.025;
+          base.material = mMat;
+          base.parent = parent;
+          this.registerShadows(base);
+
+          const body = MeshBuilder.CreateCylinder("body", { diameter: 0.75, height: 0.9 }, this.scene);
+          body.position.y = 0.5;
+          body.material = mMat;
+          body.parent = parent;
+          this.registerShadows(body);
+          
+          const hoodOut = MeshBuilder.CreateCylinder("hood1", { diameterTop: 0.6, diameterBottom: 0.8, height: 0.3 }, this.scene);
+          hoodOut.position.y = 1.1;
+          const hoodIn = MeshBuilder.CreateCylinder("hood2", { diameterTop: 0.5, diameterBottom: 0.7, height: 0.4 }, this.scene);
+          hoodIn.position.y = 1.05;
+          const hole = MeshBuilder.CreateBox("hole", { width: 0.5, depth: 1, height: 0.2 }, this.scene);
+          hole.position.y = 1.15;
+          
+          const csgOut = CSG.FromMesh(hoodOut);
+          const csgIn = CSG.FromMesh(hoodIn);
+          const csgHole = CSG.FromMesh(hole);
+          
+          const finalHood = csgOut.subtract(csgIn).subtract(csgHole).toMesh("hood", null, this.scene);
+          finalHood.material = this.getPBR("hoodMat", new Color3(0.1, 0.3, 0.8), 0.8, 0.4); // Blue metal hood
+          finalHood.parent = parent;
+          this.registerShadows(finalHood);
+          
+          hoodOut.dispose(); hoodIn.dispose(); hole.dispose();
       } else if (typeId === 'fountain') {
           const pool = MeshBuilder.CreateCylinder("pool", { diameter: w, height: 0.5 }, this.scene);
           pool.position.y = 0.25;
-          const pMat = new StandardMaterial("pMat", this.scene);
-          pMat.diffuseColor = new Color3(0.8, 0.8, 0.8);
-          pool.material = pMat;
+          pool.material = this.getPBR("rMat", new Color3(0.8, 0.8, 0.8), 0.1, 0.8);
           pool.parent = parent;
+          this.registerShadows(pool);
           
           const water = MeshBuilder.CreateCylinder("water", { diameter: w*0.9, height: 0.51 }, this.scene);
           water.position.y = 0.255;
-          const wMat = new StandardMaterial("wMat", this.scene);
-          wMat.diffuseColor = new Color3(0.2, 0.6, 0.9);
-          wMat.alpha = 0.8;
-          water.material = wMat;
+          water.material = this.getPBR("wMat", new Color3(0.2, 0.6, 0.9), 1.0, 0.0); // very shiny water
           water.parent = parent;
-          
-          const spout = MeshBuilder.CreateCylinder("spout", { diameter: 0.5, height: 2 }, this.scene);
-          spout.position.y = 1;
-          spout.material = pMat;
-          spout.parent = parent;
+          this.registerShadows(water);
       } else {
           this.createGenericBox(def, parent, new Color3(0.4, 0.8, 0.4));
       }
@@ -303,16 +425,14 @@ export class FacilityManager {
 
   private createGenericBox(def: FacilityDef, parent: TransformNode, color: Color3) {
       const w = def.sizeX * CONSTANTS.CELL_SIZE;
-      const h = def.sizeZ * CONSTANTS.CELL_SIZE;
-      const height = def.category === 'thrill' ? 10 : def.category === 'shop' ? 3 : 5;
+      const d = def.sizeZ * CONSTANTS.CELL_SIZE;
+      const h = def.category === 'thrill' ? 10 : def.category === 'shop' ? 3 : 5;
       
-      const mesh = MeshBuilder.CreateBox("gen", { width: w, depth: h, height: height }, this.scene);
-      mesh.position = new Vector3(0, height / 2, 0);
-      
-      const mat = new StandardMaterial("genMat", this.scene);
-      mat.diffuseColor = color;
-      mesh.material = mat;
+      const mesh = MeshBuilder.CreateBox("gen", { width: w, depth: d, height: h }, this.scene);
+      mesh.position = new Vector3(0, h / 2, 0);
+      mesh.material = this.getPBR("genMat", color, 0.2, 0.8);
       mesh.parent = parent;
+      this.registerShadows(mesh);
   }
 
   private despawnFacility(instanceId: string) {

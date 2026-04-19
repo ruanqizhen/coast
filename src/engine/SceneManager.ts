@@ -1,4 +1,4 @@
-import { Engine, Scene, Vector3, HemisphericLight, ArcRotateCamera, DirectionalLight, Color3, Color4 } from '@babylonjs/core';
+import { Engine, Scene, Vector3, HemisphericLight, ArcRotateCamera, DirectionalLight, Color3, Color4, ShadowGenerator } from '@babylonjs/core';
 import { CONSTANTS } from '../config/constants';
 import { GridManager } from './GridManager';
 import { FacilityManager } from './FacilityManager';
@@ -10,6 +10,7 @@ export class SceneManager {
   private _engine: Engine;
   public scene: Scene;
   public camera: ArcRotateCamera;
+  public shadowGenerator: ShadowGenerator;
   
   public gridManager: GridManager;
   public facilityManager: FacilityManager;
@@ -46,13 +47,25 @@ export class SceneManager {
     hemiLight.intensity = 0.7;
     hemiLight.groundColor = new Color3(0.4, 0.4, 0.4);
 
-    // Sun directional light for shadows
     const sun = new DirectionalLight('sun', new Vector3(-1, -2, -1), this.scene);
     sun.intensity = 0.5;
+    sun.position = new Vector3(100, 200, 100);
+
+    // Shadows
+    this.shadowGenerator = new ShadowGenerator(2048, sun);
+    this.shadowGenerator.useBlurExponentialShadowMap = true;
+    this.shadowGenerator.blurKernel = 32;
+
+    // Default environment for PBR reflections
+    this.scene.createDefaultEnvironment({
+      createSkybox: false,
+      createGround: false,
+      environmentTexture: "https://playground.babylonjs.com/textures/environment.dds" // Built-in Babylon CDN texture for reflections
+    });
 
     // Subsystems
     this.gridManager = new GridManager(this.scene);
-    this.facilityManager = new FacilityManager(this.scene);
+    this.facilityManager = new FacilityManager(this.scene, this.shadowGenerator);
     this.entityManager = new EntityManager(this.scene);
     this.roadRenderer = new RoadRenderer(this.scene);
 

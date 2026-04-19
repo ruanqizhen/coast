@@ -33,6 +33,7 @@ export class GridManager {
     groundMat.diffuseColor = Color3.FromHexString('#5aa832'); // Richer grass green
     groundMat.specularColor = new Color3(0.05, 0.05, 0.05);
     this.ground.material = groundMat;
+    this.ground.receiveShadows = true;
 
     // ── Subtle grid lines ────────────────────────────────────
     this.createGridLines(size);
