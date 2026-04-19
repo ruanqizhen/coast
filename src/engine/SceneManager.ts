@@ -39,8 +39,11 @@ export class SceneManager {
     this.camera.lowerRadiusLimit = 20;
     this.camera.upperRadiusLimit = 300;
     this.camera.wheelPrecision = 5;
-    this.camera.lowerBetaLimit = 0.3;  // Prevent flipping below ground
     this.camera.upperBetaLimit = Math.PI / 2 - 0.1;
+
+    this.camera.onViewMatrixChangedObservable.add(() => {
+      window.dispatchEvent(new CustomEvent('onCameraRotate', { detail: { alpha: this.camera.alpha } }));
+    });
 
     // Ambient lighting
     const hemiLight = new HemisphericLight('hemi', new Vector3(0, 1, 0), this.scene);

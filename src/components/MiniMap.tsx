@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useParkState } from '../store/useParkState';
 import './MiniMap.css';
 
@@ -17,6 +17,17 @@ export const MiniMap: React.FC = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const MAP_SIZE = 150; // px
   const GRID_SIZE = 64; // assume current grid size (could be from game state)
+
+  const [rotation, setRotation] = useState(0);
+
+  useEffect(() => {
+    const handleRotate = (e: any) => {
+      // Default alpha is -Math.PI / 2 (looking north). Offset to make it 0.
+      setRotation(e.detail.alpha + Math.PI / 2);
+    };
+    window.addEventListener('onCameraRotate', handleRotate);
+    return () => window.removeEventListener('onCameraRotate', handleRotate);
+  }, []);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -53,11 +64,10 @@ export const MiniMap: React.FC = () => {
     });
   }, [facilities, visitors, roads]);
 
-  // Simple hit detection – not precise but works for demo
+  // Hit detection using local unrotated offsetX/Y
   const handleClick = (e: React.MouseEvent) => {
-    const rect = (e.target as HTMLCanvasElement).getBoundingClientRect();
-    const clickX = e.clientX - rect.left;
-    const clickZ = e.clientY - rect.top;
+    const clickX = e.nativeEvent.offsetX;
+    const clickZ = e.nativeEvent.offsetY;
     const scale = GRID_SIZE / MAP_SIZE;
     const worldX = Math.floor(clickX * scale);
     const worldZ = Math.floor(clickZ * scale);
@@ -75,12 +85,26 @@ export const MiniMap: React.FC = () => {
   };
 
   return (
-    <canvas
-      ref={canvasRef}
-      width={MAP_SIZE}
-      height={MAP_SIZE}
-      className="mini-map"
-      onClick={handleClick}
-    />
+    <div style={{
+      width: MAP_SIZE, height: MAP_SIZE,
+      borderRadius: '50%',
+      overflow: 'hidden',
+      border: '3px solid rgba(255, 255, 255, 0.4)',
+      boxShadow: '0 0 15px rgba(0,0,0,0.5)',
+      backgroundColor: '#222'
+    }}>
+      <canvas
+        ref={canvasRef}
+        width={MAP_SIZE}
+        height={MAP_SIZE}
+        className="mini-map"
+        onClick={handleClick}
+        style={{ 
+            transform: `rotate(${rotation}rad)`, 
+            transformOrigin: '50% 50%',
+            transition: 'transform 0.05s linear'
+        }}
+      />
+    </div>
   );
 };
