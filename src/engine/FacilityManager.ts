@@ -1,4 +1,4 @@
-import { Scene, MeshBuilder, StandardMaterial, Color3, Vector3, TransformNode, Mesh, ShadowGenerator, CSG, Curve3, Path3D } from '@babylonjs/core';
+import { Scene, MeshBuilder, StandardMaterial, Color3, Vector3, TransformNode, Mesh, ShadowGenerator, CSG, Curve3, Path3D, Animation } from '@babylonjs/core';
 import { CONSTANTS } from '../config/constants';
 import { useParkState } from '../store/useParkState';
 import type { PlacedFacility, FacilityDef } from '../types';
@@ -62,6 +62,18 @@ export class FacilityManager {
     const posX = (facility.x * CONSTANTS.CELL_SIZE) + w / 2;
     const posZ = (facility.z * CONSTANTS.CELL_SIZE) + h / 2;
 
+    // Bypass template merging for animated complex rides
+    if (def.category === 'gentle' || def.category === 'thrill') {
+        const root = new TransformNode(facility.instanceId, this.scene);
+        if (def.category === 'gentle') this.createGentleMesh(facility.typeId, def, root);
+        else this.createThrillMesh(facility.typeId, def, root);
+        root.position = new Vector3(posX, 0, posZ);
+        root.rotation.y = facility.rotation;
+        this.meshes.set(facility.instanceId, root);
+        this.startFacilityAnimations(facility.typeId, root);
+        return;
+    }
+
     let template = this.templates.get(facility.typeId);
 
     if (!template) {
@@ -69,13 +81,6 @@ export class FacilityManager {
         switch (def.category) {
             case 'shop':
                 this.createShopMesh(def, dummyParent);
-                break;
-            case 'gentle':
-                this.createGentleMesh(facility.typeId, def, dummyParent);
-                break;
-            case 'thrill':
-                this.createThrillMesh(facility.typeId, def, dummyParent);
-                break;
             case 'facility':
                 this.createFacilityMesh(facility.typeId, def, dummyParent);
                 break;
@@ -114,6 +119,76 @@ export class FacilityManager {
         
         this.meshes.set(facility.instanceId, instance);
     }
+  }
+
+  private startFacilityAnimations(typeId: string, root: TransformNode) {
+      if (typeId === 'ferris_wheel') {
+          const wheelGroup = root.getChildMeshes().filter(m => m.name === 'wheel' || m.name === 'spoke' || m.name === 'cabin');
+          if (wheelGroup.length > 0) {
+              const wheelCore = new TransformNode("wheelCore", this.scene);
+              wheelCore.parent = root;
+              wheelGroup.forEach(m => m.setParent(wheelCore));
+
+              // Find center height
+              wheelCore.position.y = 4.5; // (maxDim+2)/2 + 2 = (3+2)/2+2 = 4.5
+              wheelGroup.forEach(m => { m.position.y -= 4.5; }); // center around pivot
+
+              // Rotate entire wheel mechanism
+              Animation.CreateAndStartAnimation("ferrisSpin", wheelCore, "rotation.x", 30, 1200, 0, Math.PI * 2, Animation.ANIMATIONLOOPMODE_CYCLE);
+
+              // Counter-rotate cabins to stay upright
+              const cabins = wheelGroup.filter(m => m.name === 'cabin');
+              cabins.forEach((cabin, idx) => {
+                  Animation.CreateAndStartAnimation(`cabSpin_${idx}`, cabin, "rotation.x", 30, 1200, 0, -Math.PI * 2, Animation.ANIMATIONLOOPMODE_CYCLE);
+              });
+          }
+      } else if (typeId === 'drop_tower') {
+          const ring = root.getChildMeshes().find(m => m.name === 'ring');
+          if (ring) {
+              const keys = [
+                  { frame: 0, value: 4 },
+                  { frame: 120, value: 21 }, // Climb
+                  { frame: 180, value: 21 }, // Wait at top
+                  { frame: 220, value: 4 },  // Drop
+                  { frame: 300, value: 4 }   // Boarding
+              ];
+              const anim = new Animation("dropAnim", "position.y", 30, Animation.ANIMATIONTYPE_FLOAT, Animation.ANIMATIONLOOPMODE_CYCLE);
+              anim.setKeys(keys);
+              ring.animations = [];
+              ring.animations.push(anim);
+              this.scene.beginAnimation(ring, 0, 300, true);
+          }
+      } else if (typeId === 'pirate_ship') {
+          const boat = root.getChildMeshes().find(m => m.name === 'boat');
+          if (boat) {
+              // Creating a pivot node up high to swing from
+              const pivot = new TransformNode("shipPivot", this.scene);
+              pivot.parent = root;
+              pivot.position.y = 12;
+              boat.setParent(pivot);
+              boat.position.y = -9; // Drop down relative to pivot
+              
+              const keys = [
+                  { frame: 0, value: 0 },
+                  { frame: 60, value: Math.PI / 3 },
+                  { frame: 120, value: 0 },
+                  { frame: 180, value: -Math.PI / 3 },
+                  { frame: 240, value: 0 }
+              ];
+
+              // Smooth easing
+              const func = new BABYLON.SineEase();
+              func.setEasingMode(BABYLON.EasingFunction.EASINGMODE_EASEINOUT);
+
+              const anim = new Animation("swingAnim", "rotation.x", 30, Animation.ANIMATIONTYPE_FLOAT, Animation.ANIMATIONLOOPMODE_CYCLE);
+              anim.setKeys(keys);
+              anim.setEasingFunction(func);
+              
+              pivot.animations = [];
+              pivot.animations.push(anim);
+              this.scene.beginAnimation(pivot, 0, 240, true);
+          }
+      }
   }
 
   private createCoasterTrack(facility: PlacedFacility) {
