@@ -8,6 +8,7 @@ export class FacilityManager {
   private scene: Scene;
   private shadowGen: ShadowGenerator;
   private meshes: Map<string, TransformNode | Mesh> = new Map();
+  private templates: Map<string, Mesh> = new Map();
 
   constructor(scene: Scene, shadowGen: ShadowGenerator) {
     this.scene = scene;
@@ -59,33 +60,59 @@ export class FacilityManager {
     const h = def.sizeZ * CONSTANTS.CELL_SIZE;
     const posX = (facility.x * CONSTANTS.CELL_SIZE) + w / 2;
     const posZ = (facility.z * CONSTANTS.CELL_SIZE) + h / 2;
-    
-    const rootMesh = new TransformNode(facility.instanceId, this.scene);
-    rootMesh.position = new Vector3(posX, 0, posZ);
-    rootMesh.rotation.y = facility.rotation;
 
-    switch (def.category) {
-        case 'shop':
-            this.createShopMesh(def, rootMesh);
-            break;
-        case 'gentle':
-            this.createGentleMesh(facility.typeId, def, rootMesh);
-            break;
-        case 'thrill':
-            this.createThrillMesh(facility.typeId, def, rootMesh);
-            break;
-        case 'facility':
-            this.createFacilityMesh(facility.typeId, def, rootMesh);
-            break;
-        case 'scenery':
-            this.createSceneryMesh(facility.typeId, def, rootMesh);
-            break;
-        default:
-            this.createGenericBox(def, rootMesh, Color3.FromHexString("#C8B89A"));
-            break;
+    let template = this.templates.get(facility.typeId);
+
+    if (!template) {
+        const dummyParent = new TransformNode("dummy", this.scene);
+        switch (def.category) {
+            case 'shop':
+                this.createShopMesh(def, dummyParent);
+                break;
+            case 'gentle':
+                this.createGentleMesh(facility.typeId, def, dummyParent);
+                break;
+            case 'thrill':
+                this.createThrillMesh(facility.typeId, def, dummyParent);
+                break;
+            case 'facility':
+                this.createFacilityMesh(facility.typeId, def, dummyParent);
+                break;
+            case 'scenery':
+                this.createSceneryMesh(facility.typeId, def, dummyParent);
+                break;
+            default:
+                this.createGenericBox(def, dummyParent, Color3.FromHexString("#C8B89A"));
+                break;
+        }
+
+        const childMeshes = dummyParent.getChildMeshes() as Mesh[];
+        if (childMeshes.length > 0) {
+            // Remove from dummy parent so they merge purely in world space around origin
+            childMeshes.forEach(m => m.setParent(null));
+            // Merge all child primitives and CSG results into one Instancing Master template
+            template = Mesh.MergeMeshes(childMeshes, true, true, undefined, false, true) as Mesh;
+            if (template) {
+                template.isVisible = false;
+                this.registerShadows(template);
+                this.templates.set(facility.typeId, template);
+            }
+        }
+        dummyParent.dispose();
     }
-    
-    this.meshes.set(facility.instanceId, rootMesh);
+
+    if (template) {
+        const instance = template.createInstance(facility.instanceId);
+        instance.position = new Vector3(posX, 0, posZ);
+        instance.rotation.y = facility.rotation;
+        
+        if (this.shadowGen) {
+            this.shadowGen.addShadowCaster(instance, true);
+        }
+        // receiveShadows is inherited from the template by Babylon JS InstancedMesh
+        
+        this.meshes.set(facility.instanceId, instance);
+    }
   }
 
   private createCoasterTrack(facility: PlacedFacility) {
