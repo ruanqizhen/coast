@@ -5,20 +5,15 @@ import { Scene, Sound } from '@babylonjs/core';
  * Ships in mute mode — ready to accept audio assets.
  */
 export class SoundManager {
-  private scene: Scene;
   private enabled: boolean = false;
-  private bgmEnabled: boolean = false;
-  private sfxVolume: number = 0.5;
-  private bgmVolume: number = 0.3;
-
   private bgmTracks: Sound[] = [];
-  private currentBgmIndex: number = 0;
-
+  
   // Sound categories for spatial audio
   private facilitySounds: Map<string, Sound> = new Map();
 
   constructor(scene: Scene) {
-    this.scene = scene;
+      // Scene parameter is passed for future audio implementation
+      void scene;
   }
 
   /** Enable/disable all sounds */
@@ -31,14 +26,14 @@ export class SoundManager {
 
   /** Set SFX volume (0-1) */
   setSFXVolume(vol: number) {
-    this.sfxVolume = Math.max(0, Math.min(1, vol));
+      void vol; // Placeholder
   }
 
   /** Set BGM volume (0-1) */
   setBGMVolume(vol: number) {
-    this.bgmVolume = Math.max(0, Math.min(1, vol));
+    const finalVol = Math.max(0, Math.min(1, vol));
     for (const track of this.bgmTracks) {
-      track.setVolume(this.bgmVolume);
+      track.setVolume(finalVol);
     }
   }
 
@@ -75,6 +70,7 @@ export class SoundManager {
 
   /** Start rain sound effect (looping, fade in) */
   startRainSound(heavy: boolean = false) {
+    void heavy; // Placeholder
     if (!this.enabled) return;
     // Placeholder: spatial rain ambient
   }
@@ -87,13 +83,11 @@ export class SoundManager {
   /** Start BGM loop */
   startBGM() {
     if (!this.enabled) return;
-    this.bgmEnabled = true;
     // Placeholder: would load 3 tracks and cycle them
   }
 
   /** Stop BGM */
   stopBGM() {
-    this.bgmEnabled = false;
     for (const track of this.bgmTracks) {
       track.stop();
     }

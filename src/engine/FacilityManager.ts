@@ -34,6 +34,7 @@ export class FacilityManager {
   }
 
   private getPBR(name: string, color: Color3, metallic: number = 0.1, roughness: number = 0.8): StandardMaterial {
+      void roughness; // Placeholder for future physical material upgrade
       const mat = new StandardMaterial(name, this.scene);
       mat.diffuseColor = color;
       if (metallic > 0.5) {

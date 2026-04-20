@@ -1,4 +1,4 @@
-import type { PlacedFacility, LoanState, MonthData, TicketMode } from '../types';
+import type { PlacedFacility, LoanState } from '../types';
 import { CONSTANTS } from '../config/constants';
 import { FACILITIES, DEFAULT_TICKET_PRICES } from '../config/facilities';
 

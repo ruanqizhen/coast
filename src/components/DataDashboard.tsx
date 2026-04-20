@@ -1,7 +1,6 @@
-import React from 'react';
 import { createPortal } from 'react-dom';
 import { useGameState } from '../store/useGameState';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts';
 import { X } from 'lucide-react';
 
 interface Props {

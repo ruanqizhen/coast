@@ -1,10 +1,10 @@
-import React, { useEffect, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import { SceneManager } from '../engine/SceneManager';
 import { Tools } from '@babylonjs/core';
 import { useGameState } from '../store/useGameState';
 import { useParkState } from '../store/useParkState';
 import { FACILITIES } from '../config/facilities';
-import type { FacilityType, Category } from '../types';
+import type { FacilityType, PlacedFacility } from '../types';
 
 export function BabylonCanvas() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -16,8 +16,8 @@ export function BabylonCanvas() {
     }
 
     const handlePlacement = (e: Event) => {
-      const customEvent = e as CustomEvent<{ id: FacilityType | 'cleaner' | 'mechanic' | 'security' | 'entertainer'; x: number; z: number }>;
-      const { id, x, z } = customEvent.detail;
+      const customEvent = e as CustomEvent<{ id: FacilityType | 'cleaner' | 'mechanic' | 'security' | 'entertainer'; x: number; z: number; rotation: number }>;
+      const { id, x, z, rotation } = customEvent.detail;
       
       const { deductMoney } = useGameState.getState();
       const { addFacility, exitPlacementMode } = useParkState.getState();
@@ -35,15 +35,20 @@ export function BabylonCanvas() {
       if (!def) return;
 
       if (deductMoney(def.buildCost)) {
-        addFacility({
+        const facilityRecord: PlacedFacility = {
           instanceId: `fac_${Date.now()}`,
           typeId: id as FacilityType,
           x,
           z,
-          rotation: 0,
+          rotation,
           age: 0,
-          breakdown: false
-        });
+          breakdown: false,
+          totalRides: 0,
+          ticketPrice: 0,
+          lastRepairDay: 0,
+          builtOnDay: 0
+        };
+        addFacility(facilityRecord);
         exitPlacementMode();
       }
     };

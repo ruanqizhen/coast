@@ -1,4 +1,4 @@
-import { CONSTANTS, STAR_REQUIREMENTS } from '../config/constants';
+import { CONSTANTS } from '../config/constants';
 
 /**
  * ExpansionSystem: handles land expansion logic.

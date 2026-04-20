@@ -23,8 +23,12 @@ export const MessageFeed: React.FC = () => {
   return (
     <div className="message-feed">
       {messages.map(msg => (
-        <div key={msg.id} className="message-item" title={msg.detail}>
-          {msg.title}
+        <div key={msg.id} className="message-item">
+          <div style={{ flex: 1 }}>
+            <div style={{ color: '#fff', fontSize: 13, marginBottom: 4, lineHeight: 1.4 }}>
+              {msg.text}
+            </div>
+          </div>
         </div>
       ))}
     </div>

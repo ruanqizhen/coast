@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import { HUD } from './components/HUD';
 import { BuildBar } from './components/BuildBar';
 import { CoasterEditor } from './components/CoasterEditor';
@@ -9,6 +9,7 @@ import { MessageFeed } from './components/MessageFeed';
 import { MiniMap } from './components/MiniMap';
 import { FacilityInfoCard } from './components/FacilityInfoCard';
 import { VisitorInfoCard } from './components/VisitorInfoCard';
+import type { PlacedFacility } from './types';
 
 export function App() {
   const workerRef = useRef<Worker | null>(null);
@@ -22,7 +23,7 @@ export function App() {
   const setVisitorsCount = useGameState(state => state.setVisitorsCount);
 
   const facilities = useParkState(state => state.facilities);
-  const setFacilities = useParkState(state => state.setFacilities);
+  // Removed unused setFacilities
   const setVisitors = useParkState(state => state.setVisitors);
   const setStaff = useParkState(state => state.setStaff);
   const setVomitPoints = useParkState(state => state.setVomitPoints);
@@ -109,17 +110,18 @@ export function App() {
 
      const handleCoasterBuilt = (e: any) => {
          const { typeId, pieces } = e.detail;
-         // Usually we'd check if first piece == last piece position, for now just spawn
-         useParkState.getState().addFacility({
-             instanceId: `coaster_${Date.now()}`,
-             typeId,
-             x: pieces.length > 0 ? pieces[0].x : 0,
-             z: pieces.length > 0 ? pieces[0].z : 0,
-             rotation: 0,
-             age: 0,
-             breakdown: false,
-             trackPieces: pieces
-         });
+         const { addFacility } = useParkState.getState();
+         const instanceId = `coaster_${Date.now()}`;
+         const x = pieces.length > 0 ? pieces[0].x : 0;
+         const z = pieces.length > 0 ? pieces[0].z : 0;
+         const rotation = 0;
+         const trackPieces = pieces;
+         const facilityRecord: PlacedFacility = {
+           instanceId, typeId, x, z, rotation,
+           age: 0, breakdown: false, trackPieces,
+           totalRides: 0, ticketPrice: 0, lastRepairDay: 0, builtOnDay: 0
+         };
+         addFacility(facilityRecord);
      }
      window.addEventListener('onCoasterBuilt', handleCoasterBuilt);
 

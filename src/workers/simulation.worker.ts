@@ -2,14 +2,13 @@
 // Runs in Web Worker: visitor AI (FSM + utility), staff AI, economy, weather, satisfaction, star rating
 import type {
   Visitor, Staff, VomitPoint, TrashPoint, PlacedFacility,
-  VisitorNeeds, VisitorAgeGroup, VisitorState, Position,
-  WeatherType, GameMessage, StaffPatrolZone, RoadTile
+  VisitorAgeGroup, WeatherType
 } from '../types';
 import { CONSTANTS, STAR_REQUIREMENTS } from '../config/constants';
 import { FACILITIES, DEFAULT_TICKET_PRICES } from '../config/facilities';
 import { findPath, buildWeightGrid } from '../engine/PathfindingSystem';
 import { calcAcceptanceRate, calcMonthlySettlement, calcDemolishRefund, createDefaultLoan } from '../engine/EconomySystem';
-import type { LoanState, MonthData } from '../types';
+import type { LoanState } from '../types';
 
 // ═══════════════════════════════════
 // Worker State
@@ -37,10 +36,8 @@ let ticketMode: 'free' | 'paid' = 'free';
 let ticketPrice = 0;
 let loan: LoanState = createDefaultLoan();
 let monthRevenue = 0;
-let monthExpenses = 0;
 let visitorPeak = 0;
 let unlockedTechs: string[] = [];
-let parkStars = 0;
 
 // Satisfaction components
 let satExperience = 50;
@@ -80,7 +77,6 @@ self.onmessage = (e) => {
       if (payload.day !== undefined) currentDay = payload.day;
       if (payload.month !== undefined) currentMonth = payload.month;
       if (payload.unlockedTechs !== undefined) unlockedTechs = payload.unlockedTechs;
-      if (payload.stars !== undefined) parkStars = payload.stars;
       break;
     case 'SPAWN_STAFF': {
       const sId = `staff_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
@@ -385,7 +381,6 @@ function updateSatisfaction() {
   satEnvironment = Math.min(100, (sceneryCount * 5) + (totalEnvBoost / Math.max(1, sceneryCount / 2)));
 
   // 4. Value for money
-  const avgMoney = vs.reduce((acc, v) => acc + v.money, 0) / vs.length;
   satValue = ticketPrice > 0 ? Math.max(20, 80 - ticketPrice * 2) : 70;
 
   // 5. Staff service
@@ -466,7 +461,6 @@ function doMonthlySettlement() {
   loan.principal += loan.principal * loan.monthlyRate;
 
   monthRevenue = 0;
-  monthExpenses = 0;
   visitorPeak = 0;
 
   self.postMessage({ type: 'MESSAGE', payload: {
@@ -595,7 +589,7 @@ function simulateVisitors(dt: number) {
 
       case 'idle':
         if (now - (v.lastDecisionTime || 0) > getDecisionFrequency()) {
-            handleVisitorDecision(v, now);
+            handleVisitorDecision(v);
             v.lastDecisionTime = now;
         }
         break;
@@ -665,7 +659,7 @@ function simulateVisitors(dt: number) {
 // ═══════════════════════════════════
 // Visitor Decision (PRD §5.2.4)
 // ═══════════════════════════════════
-function handleVisitorDecision(v: Visitor, now: number) {
+function handleVisitorDecision(v: Visitor) {
   // Check urgent needs first
   if (v.needs.nausea > CONSTANTS.NEEDS.NAUSEA_FIRSTAID_THRESHOLD) {
     seekFacilityOfType(v, 'first_aid');
@@ -737,7 +731,6 @@ function seekFacilityOfType(v: Visitor, typeId: string): boolean {
 }
 
 function seekBestRide(v: Visitor) {
-  const scanRange = CONSTANTS.VISITOR_SCAN_RADIUS * CONSTANTS.CELL_SIZE;
   const prefs = CONSTANTS.AGE_PREFERENCES[v.ageGroup];
   let bestFac: PlacedFacility | null = null;
   let bestUtility = -Infinity;
@@ -1041,7 +1034,7 @@ function simulateStaff(dt: number) {
 
       if (dist < staffSpeed) {
         s.pos = { ...s.targetPos };
-        handleStaffArrival(s, now);
+        handleStaffArrival(s);
         s.targetPos = null;
         s.targetInstanceId = null;
       } else {
@@ -1155,7 +1148,7 @@ function findStaffWork(s: Staff, now: number) {
   };
 }
 
-function handleStaffArrival(s: Staff, now: number) {
+function handleStaffArrival(s: Staff) {
   if (!s.targetInstanceId) return;
 
   switch (s.type) {

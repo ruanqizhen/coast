@@ -31,7 +31,7 @@ export class EntityManager {
     this.vomitMat.diffuseColor = new Color3(0.5, 0.6, 0.1); // Greenish yellow
     
     // Subscribe
-    useParkState.subscribe((state, prevState) => {
+    useParkState.subscribe((state) => {
         this.updateVisitors(state.visitors);
         this.updateStaff(state.staff);
         this.updateVomitPoints(state.vomitPoints);

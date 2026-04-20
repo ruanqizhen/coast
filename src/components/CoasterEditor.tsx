@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { useParkState } from '../store/useParkState';
 import { useGameState } from '../store/useGameState';
-import type { TrackPieceType, CoasterTrackPiece, FacilityType } from '../types';
-import { MoveRight, TrendingUp, TrendingDown, RefreshCcw, Check, X } from 'lucide-react';
+import type { TrackPieceType } from '../types';
+import { MoveRight, TrendingUp, TrendingDown, RefreshCcw, Check, X, Lock } from 'lucide-react';
 import { CONSTANTS } from '../config/constants';
 
 export function CoasterEditor() {

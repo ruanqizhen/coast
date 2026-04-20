@@ -1,4 +1,3 @@
-import React from 'react';
 import { createPortal } from 'react-dom';
 import { useGameState } from '../store/useGameState';
 import { TECH_TREE } from '../config/techtree';

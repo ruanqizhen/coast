@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { useParkState } from '../store/useParkState';
 import { useGameState } from '../store/useGameState';
 import { FACILITIES } from '../config/facilities';

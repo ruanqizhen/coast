@@ -3,7 +3,6 @@ import { useGameState } from '../store/useGameState';
 import { DollarSign, Calendar, Star, Users, Pause, Play, FastForward, Sun, CloudRain, BarChart2, Beaker, Camera } from 'lucide-react';
 import { DataDashboard } from './DataDashboard';
 import { ResearchTechTree } from './ResearchTechTree';
-import { SceneManager } from '../engine/SceneManager';
 
 export function HUD() {
   const money = useGameState(state => state.money);
