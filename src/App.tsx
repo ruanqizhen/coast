@@ -125,11 +125,49 @@ export function App() {
      }
      window.addEventListener('onCoasterBuilt', handleCoasterBuilt);
 
+     const handleGameLoaded = (e: any) => {
+         const data = e.detail;
+         
+         // Hydrate useGameState
+         useGameState.setState({
+            money: data.park.money,
+            day: data.park.date.day,
+            month: data.park.date.month,
+            rating: data.park.rating,
+            stars: data.park.stars,
+            ticketMode: data.park.settings.ticketMode,
+            ticketPrice: data.park.settings.ticketPrice,
+            speed: data.park.settings.speedMultiplier,
+            loan: data.economy.loan,
+            historicalData: data.economy.historicalData,
+            monthlyResearchBudget: data.research.monthlyBudget,
+            researchPoints: data.research.accumulatedPoints,
+            unlockedTechs: data.research.unlocked,
+            weather: data.weather,
+            nextWeather: data.nextWeather
+         });
+
+         // Hydrate useParkState
+         useParkState.setState({
+            roads: data.roads,
+            facilities: data.facilities,
+            visitors: data.visitors.reduce((acc: any, v: any) => ({ ...acc, [v.id]: v }), {}),
+            staff: data.staff.reduce((acc: any, s: any) => ({ ...acc, [s.id]: s }), {})
+         });
+
+         // Send strict LOAD_STATE event to Web Worker
+         if (workerRef.current) {
+             workerRef.current.postMessage({ type: 'LOAD_STATE', payload: data });
+         }
+     };
+     window.addEventListener('onGameLoaded', handleGameLoaded);
+
      return () => {
          window.removeEventListener('onFacilityUpdate', handleUpdate);
          window.removeEventListener('onRoadPlaced', handleRoadPlaced);
          window.removeEventListener('onStaffSpawn', handleStaffSpawn);
          window.removeEventListener('onCoasterBuilt', handleCoasterBuilt);
+         window.removeEventListener('onGameLoaded', handleGameLoaded);
      };
   }, []);
 

@@ -181,3 +181,5 @@ export class SaveSystem {
     this.db?.close();
   }
 }
+
+export const saveManager = new SaveSystem();

@@ -1,6 +1,9 @@
 import React from 'react';
 import { useGameState } from '../store/useGameState';
-import { DollarSign, Calendar, Star, Users, Pause, Play, FastForward, Sun, CloudRain, BarChart2, Beaker, Camera } from 'lucide-react';
+import { DollarSign, Calendar, Star, Users, Pause, Play, FastForward, Sun, CloudRain, BarChart2, Beaker, Camera, Save, FolderOpen } from 'lucide-react';
+import { saveManager } from '../engine/SaveSystem';
+import { useParkState } from '../store/useParkState';
+import type { SaveData } from '../types';
 import { DataDashboard } from './DataDashboard';
 import { ResearchTechTree } from './ResearchTechTree';
 
@@ -20,6 +23,45 @@ export function HUD() {
 
   const takeScreenshot = () => {
      window.dispatchEvent(new CustomEvent('onTakeScreenshot'));
+  };
+
+  const handleSave = async () => {
+      const gState = useGameState.getState();
+      const pState = useParkState.getState();
+      
+      const data: SaveData = {
+          version: "1.0.0",
+          park: {
+              name: "My Coast Park",
+              size: gState.gridSize,
+              money: gState.money,
+              date: { day: gState.day, month: gState.month },
+              rating: gState.rating,
+              stars: gState.stars,
+              settings: { ticketMode: gState.ticketMode, ticketPrice: gState.ticketPrice, speedMultiplier: gState.speed }
+          },
+          roads: pState.roads,
+          facilities: pState.facilities,
+          staff: Object.values(pState.staff).map(s => ({ id: s.id, type: s.type, zone: s.patrolZone })),
+          research: { monthlyBudget: gState.monthlyResearchBudget, accumulatedPoints: gState.researchPoints, unlocked: gState.unlockedTechs },
+          visitors: Object.values(pState.visitors),
+          economy: { loan: gState.loan, historicalData: gState.historicalData },
+          weather: gState.weather,
+          nextWeather: gState.nextWeather
+      };
+      
+      await saveManager.save('autosave_coast_1', data);
+      gState.addMessage({ id: `msg_${Date.now()}`, text: "游戏已保存", priority: 'info', timestamp: Date.now() });
+  };
+
+  const handleLoad = async () => {
+      const data = await saveManager.load('autosave_coast_1');
+      if (data) {
+          window.dispatchEvent(new CustomEvent('onGameLoaded', { detail: data }));
+          useGameState.getState().addMessage({ id: `msg_${Date.now()}`, text: "游戏已读取", priority: 'info', timestamp: Date.now() });
+      } else {
+          alert("找不到存档");
+      }
   };
 
   return (
@@ -59,6 +101,14 @@ export function HUD() {
 
       <button onClick={takeScreenshot} className="glass-pill" style={{ background: '#44BBA4' }}>
         <Camera size={16} /> 截图
+      </button>
+
+      <button onClick={handleSave} className="glass-pill" style={{ background: '#F4A223' }}>
+        <Save size={16} /> 保存
+      </button>
+
+      <button onClick={handleLoad} className="glass-pill" style={{ background: '#F4A223' }}>
+        <FolderOpen size={16} /> 读取
       </button>
 
       <div style={{ width: '1px', height: '24px', background: 'var(--panel-border)', margin: '0 8px' }} />

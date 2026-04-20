@@ -1,4 +1,4 @@
-import { Scene, MeshBuilder, StandardMaterial, Color3, Vector3, TransformNode, Mesh, ShadowGenerator, CSG } from '@babylonjs/core';
+import { Scene, MeshBuilder, StandardMaterial, Color3, Vector3, TransformNode, Mesh, ShadowGenerator, CSG, Curve3, Path3D } from '@babylonjs/core';
 import { CONSTANTS } from '../config/constants';
 import { useParkState } from '../store/useParkState';
 import type { PlacedFacility, FacilityDef } from '../types';
@@ -118,17 +118,123 @@ export class FacilityManager {
 
   private createCoasterTrack(facility: PlacedFacility) {
       const parent = new TransformNode(facility.instanceId, this.scene);
-      facility.trackPieces!.forEach((piece, idx) => {
-          let height = piece.type === 'climb' ? 4 : piece.type === 'dive' ? 2 : piece.type === 'loop' ? 8 : 2;
-          const mesh = MeshBuilder.CreateBox(`${facility.instanceId}_piece_${idx}`, { 
-              width: CONSTANTS.CELL_SIZE * 0.8, depth: CONSTANTS.CELL_SIZE * 0.8, height 
-          }, this.scene);
+      const trackPoints: Vector3[] = [];
+      let currentHeight = 2;
+      
+      const pieces = facility.trackPieces || [];
+      if (pieces.length === 0) return parent;
+
+      pieces.forEach((piece) => {
+          if (piece.type === 'climb') {
+              currentHeight += 4;
+          } else if (piece.type === 'dive') {
+              currentHeight -= 4;
+          }
           
-          mesh.position = new Vector3(piece.x * CONSTANTS.CELL_SIZE, height / 2, piece.z * CONSTANTS.CELL_SIZE);
-          mesh.material = this.getPBR("trkMat", Color3.FromHexString("#E84855"), 0.8, 0.3); // Metallic Red
-          mesh.parent = parent;
-          this.registerShadows(mesh);
+          let px = piece.x * CONSTANTS.CELL_SIZE;
+          let pz = piece.z * CONSTANTS.CELL_SIZE;
+          
+          if (piece.type === 'loop') {
+              const rad = (piece.rotation * Math.PI) / 180;
+              const fwdX = Math.sin(rad);
+              const fwdZ = Math.cos(rad);
+              const loopRadius = 6;
+              const pointsInLoop = 12;
+              
+              for (let i = 0; i <= pointsInLoop; i++) {
+                  const angle = (i / pointsInLoop) * Math.PI * 2;
+                  const zArc = -Math.sin(angle) * loopRadius; 
+                  const yArc = (1 - Math.cos(angle)) * loopRadius;
+                  
+                  trackPoints.push(new Vector3(
+                      px + fwdX * zArc,
+                      currentHeight + yArc,
+                      pz + fwdZ * zArc
+                  ));
+              }
+          } else {
+             // Calculate bank based on slopeAngle if any (placeholder logic for node mapping)
+             // We just add simple positional nodes
+             trackPoints.push(new Vector3(px, currentHeight, pz));
+          }
       });
+      
+      if (trackPoints.length < 2) return parent;
+
+      // Ensure points don't perfectly overlap if duplicate
+      for (let i = 1; i < trackPoints.length; i++) {
+          if (trackPoints[i].equals(trackPoints[i-1])) {
+              trackPoints[i].addInPlace(new Vector3(0.01, 0, 0.01));
+          }
+      }
+
+      // Check loop closure dynamically
+      const isClosed = trackPoints.length > 3 && Vector3.Distance(trackPoints[0], trackPoints[trackPoints.length - 1]) < CONSTANTS.CELL_SIZE;
+      const spline = Curve3.CreateCatmullRomSpline(trackPoints, 15, isClosed);
+      const points = spline.getPoints();
+
+      const spineMat = this.getPBR("spineMat", Color3.FromHexString("#222222"), 0.5);
+      const railMat = this.getPBR("railMat", Color3.FromHexString("#E84855"), 0.8);
+      
+      // Main Center Spine
+      const spineTube = MeshBuilder.CreateTube(`${facility.instanceId}_spine`, {
+          path: points,
+          radius: 0.25,
+          tessellation: 12,
+          updatable: false
+      }, this.scene);
+      spineTube.material = spineMat;
+      spineTube.parent = parent;
+      this.registerShadows(spineTube);
+
+      // Orthogonal Left/Right Rails
+      const path3d = new Path3D(points);
+      const curve = path3d.getCurve();
+      const binormals = path3d.getBinormals();
+      const normals = path3d.getNormals();
+
+      const railOffset = 0.5;
+      const railUpOffset = 0.3;
+      
+      const leftRailPoints: Vector3[] = [];
+      const rightRailPoints: Vector3[] = [];
+      
+      for (let i = 0; i < curve.length; i++) {
+          const pt = curve[i];
+          const bn = binormals[i];
+          const up = normals[i]; 
+          leftRailPoints.push(pt.add(bn.scale(railOffset)).add(up.scale(railUpOffset)));
+          rightRailPoints.push(pt.add(bn.scale(-railOffset)).add(up.scale(railUpOffset)));
+      }
+
+      const leftTube = MeshBuilder.CreateTube(`${facility.instanceId}_left`, {
+          path: leftRailPoints, radius: 0.1, tessellation: 8
+      }, this.scene);
+      leftTube.material = railMat;
+      leftTube.parent = parent;
+      this.registerShadows(leftTube);
+
+      const rightTube = MeshBuilder.CreateTube(`${facility.instanceId}_right`, {
+          path: rightRailPoints, radius: 0.1, tessellation: 8
+      }, this.scene);
+      rightTube.material = railMat;
+      rightTube.parent = parent;
+      this.registerShadows(rightTube);
+
+      // Support Columns (placing every 15th node)
+      const columnMat = this.getPBR("colMat", new Color3(0.8, 0.8, 0.8), 0.1);
+      for (let i = 0; i < curve.length; i += 15) {
+          const pt = curve[i];
+          const height = pt.y;
+          if (height > 0.5) {
+              const col = MeshBuilder.CreateCylinder("col", { height, diameter: 0.3 }, this.scene);
+              col.position = new Vector3(pt.x, height / 2, pt.z);
+              col.material = columnMat;
+              col.parent = parent;
+              this.registerShadows(col);
+          }
+      }
+
       return parent;
   }
 

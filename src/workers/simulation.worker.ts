@@ -65,6 +65,20 @@ self.onmessage = (e) => {
       stopLoops();
       if (currentSpeed > 0) startLoops();
       break;
+    case 'LOAD_STATE':
+      visitors = payload.visitors ? payload.visitors.reduce((acc: any, v: any) => ({ ...acc, [v.id]: v }), {}) : {};
+      staff = payload.staff ? payload.staff.reduce((acc: any, s: any) => ({ ...acc, [s.id]: s }), {}) : {};
+      weather = payload.weather || 'sunny';
+      nextWeather = payload.nextWeather || 'cloudy';
+      rating = payload.park?.rating || 50;
+      stars = payload.park?.stars || 0;
+      currentDay = payload.park?.date?.day || 1;
+      currentMonth = payload.park?.date?.month || 1;
+      unlockedTechs = payload.research?.unlocked || [];
+      loan = payload.economy?.loan || createDefaultLoan();
+      ticketMode = payload.park?.settings?.ticketMode || 'free';
+      ticketPrice = payload.park?.settings?.ticketPrice || 0;
+      break;
     case 'SYNC_FACILITIES':
       facilities = payload; break;
     case 'SYNC_ROADS':
