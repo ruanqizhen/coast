@@ -1,5 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { CONSTANTS } from '../config/constants';
 import { useParkState } from '../store/useParkState';
+import { useGameState } from '../store/useGameState';
 import './MiniMap.css';
 
 /**
@@ -16,13 +18,14 @@ export const MiniMap: React.FC = () => {
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const MAP_SIZE = 150; // px
-  const GRID_SIZE = 64; // assume current grid size (could be from game state)
+  // Fetch dynamic grid size
+  const GRID_SIZE = useGameState(state => state.gridSize) || 64;
 
   const [rotation, setRotation] = useState(0);
 
   useEffect(() => {
     const handleRotate = (e: any) => {
-      // Default alpha is -Math.PI / 2 (looking north). Offset to make it 0.
+      // Offset by Math.PI/2, removed negative sign to sync clockwise rotation correctly
       setRotation(e.detail.alpha + Math.PI / 2);
     };
     window.addEventListener('onCameraRotate', handleRotate);
@@ -43,22 +46,24 @@ export const MiniMap: React.FC = () => {
     ctx.fillStyle = '#555';
     roads.forEach(r => {
       const x = (r.x / GRID_SIZE) * MAP_SIZE;
-      const z = (r.z / GRID_SIZE) * MAP_SIZE;
+      const z = MAP_SIZE - (r.z / GRID_SIZE) * MAP_SIZE; // Flip Z axis vertically
       ctx.fillRect(x, z, 2, 2);
     });
     // Draw facilities
     ctx.fillStyle = '#0f0';
     facilities.forEach(f => {
       const x = (f.x / GRID_SIZE) * MAP_SIZE;
-      const z = (f.z / GRID_SIZE) * MAP_SIZE;
+      const z = MAP_SIZE - (f.z / GRID_SIZE) * MAP_SIZE; // Flip Z axis vertically
       ctx.fillRect(x, z, 3, 3);
     });
     // Draw visitors
     ctx.fillStyle = '#ff0';
     Object.values(visitors).forEach(v => {
       if (v && v.pos) {
-        const x = (v.pos.x / GRID_SIZE) * MAP_SIZE;
-        const z = (v.pos.z / GRID_SIZE) * MAP_SIZE;
+        const worldMaxX = GRID_SIZE * CONSTANTS.CELL_SIZE;
+        const worldMaxZ = GRID_SIZE * CONSTANTS.CELL_SIZE;
+        const x = (v.pos.x / worldMaxX) * MAP_SIZE;
+        const z = MAP_SIZE - (v.pos.z / worldMaxZ) * MAP_SIZE; // Flip Z axis vertically
         ctx.fillRect(x, z, 2, 2);
       }
     });
@@ -70,15 +75,15 @@ export const MiniMap: React.FC = () => {
     const clickZ = e.nativeEvent.offsetY;
     const scale = GRID_SIZE / MAP_SIZE;
     const worldX = Math.floor(clickX * scale);
-    const worldZ = Math.floor(clickZ * scale);
+    const worldZ = Math.floor((MAP_SIZE - clickZ) * scale); // Flip Z mapping back!
     // Find nearest facility within 2 cells
     const facility = facilities.find(f => Math.abs(f.x - worldX) <= 2 && Math.abs(f.z - worldZ) <= 2);
     if (facility) {
       selectFacility(facility.instanceId);
       return;
     }
-    // Find nearest visitor
-    const visitor = Object.values(visitors).find(v => v.pos && Math.abs(v.pos.x - worldX) <= 2 && Math.abs(v.pos.z - worldZ) <= 2);
+    // Find nearest visitor (convert visitor world pos to grid coordinates first)
+    const visitor = Object.values(visitors).find(v => v.pos && Math.abs((v.pos.x / CONSTANTS.CELL_SIZE) - worldX) <= 2 && Math.abs((v.pos.z / CONSTANTS.CELL_SIZE) - worldZ) <= 2);
     if (visitor) {
       selectVisitor(visitor.id);
     }
@@ -100,7 +105,7 @@ export const MiniMap: React.FC = () => {
         className="mini-map"
         onClick={handleClick}
         style={{ 
-            transform: `rotate(${rotation}rad)`, 
+            transform: `scale(0.7) rotate(${rotation}rad)`, 
             transformOrigin: '50% 50%',
             transition: 'transform 0.05s linear'
         }}
