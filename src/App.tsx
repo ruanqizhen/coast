@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useCallback } from 'react';
 import { HUD } from './components/HUD';
 import { BuildBar } from './components/BuildBar';
 import { CoasterEditor } from './components/CoasterEditor';
@@ -9,7 +9,9 @@ import { MessageFeed } from './components/MessageFeed';
 import { MiniMap } from './components/MiniMap';
 import { FacilityInfoCard } from './components/FacilityInfoCard';
 import { VisitorInfoCard } from './components/VisitorInfoCard';
-import type { PlacedFacility } from './types';
+import { saveManager } from './engine/SaveSystem';
+import { CONSTANTS } from './config/constants';
+import type { PlacedFacility, SaveData } from './types';
 
 export function App() {
   const workerRef = useRef<Worker | null>(null);
@@ -23,13 +25,55 @@ export function App() {
   const setVisitorsCount = useGameState(state => state.setVisitorsCount);
 
   const facilities = useParkState(state => state.facilities);
-  // Removed unused setFacilities
   const setVisitors = useParkState(state => state.setVisitors);
   const setStaff = useParkState(state => state.setStaff);
   const setVomitPoints = useParkState(state => state.setVomitPoints);
   const selectedFacilityId = useParkState(state => state.selectedFacilityId);
   const selectedVisitorId = useParkState(state => state.selectedVisitorId);
+  const isSaving = useGameState(state => state.isSaving);
 
+  // ═══════════════════════════════════
+  // Auto-save every 5 minutes (PRD §8.6)
+  // ═══════════════════════════════════
+  const doAutoSave = useCallback(async () => {
+    const gState = useGameState.getState();
+    const pState = useParkState.getState();
+
+    const data: SaveData = {
+      version: "1.0.0",
+      park: {
+        name: "My Coast Park",
+        size: gState.gridSize,
+        money: gState.money,
+        date: { day: gState.day, month: gState.month },
+        rating: gState.rating,
+        stars: gState.stars,
+        settings: { ticketMode: gState.ticketMode, ticketPrice: gState.ticketPrice, speedMultiplier: gState.speed }
+      },
+      roads: pState.roads,
+      facilities: pState.facilities,
+      staff: Object.values(pState.staff).map(s => ({ id: s.id, type: s.type, zone: s.patrolZone })),
+      research: { monthlyBudget: gState.monthlyResearchBudget, accumulatedPoints: gState.researchPoints, unlocked: gState.unlockedTechs },
+      visitors: Object.values(pState.visitors),
+      economy: { loan: gState.loan, historicalData: gState.historicalData },
+      weather: gState.weather,
+      nextWeather: gState.nextWeather
+    };
+
+    gState.setSaving(true);
+    await saveManager.save('autosave_coast_1', data);
+    gState.setSaving(false);
+    gState.addMessage({ id: `msg_${Date.now()}`, text: "💾 自动保存完成", priority: 'info', timestamp: Date.now() });
+  }, []);
+
+  useEffect(() => {
+    const autoSaveInterval = setInterval(doAutoSave, CONSTANTS.AUTO_SAVE_INTERVAL);
+    return () => clearInterval(autoSaveInterval);
+  }, [doAutoSave]);
+
+  // ═══════════════════════════════════
+  // Worker Init
+  // ═══════════════════════════════════
   useEffect(() => {
     // Initialize Web Worker
     workerRef.current = new Worker(new URL('./workers/simulation.worker.ts', import.meta.url), { type: 'module' });
@@ -53,11 +97,13 @@ export function App() {
           addMoney(payload.amount);
         }
       } else if (type === 'FACILITY_BREAKDOWN') {
-         // Zustand state setter outside component requires get/set, but we can do a simple hack for now
-         // Since we don't have a direct reducer, we dispatch an event
          window.dispatchEvent(new CustomEvent('onFacilityUpdate', { detail: { id: payload, breakdown: true }}));
       } else if (type === 'FACILITY_FIXED') {
          window.dispatchEvent(new CustomEvent('onFacilityUpdate', { detail: { id: payload, breakdown: false }}));
+      } else if (type === 'MESSAGE') {
+         useGameState.getState().addMessage(payload);
+      } else if (type === 'STAR_UPDATE') {
+         useGameState.getState().setStars(payload);
       }
     };
 
@@ -162,19 +208,38 @@ export function App() {
      };
      window.addEventListener('onGameLoaded', handleGameLoaded);
 
+     // Facility demolish handler — dispatch to worker for refund
+     const handleDemolish = (e: any) => {
+         if (workerRef.current) {
+             workerRef.current.postMessage({ type: 'REMOVE_FACILITY', payload: e.detail });
+         }
+     };
+     window.addEventListener('onFacilityDemolish', handleDemolish);
+
+     // Message click → pan camera to target position
+     const handleMessageClick = (e: any) => {
+         const { targetPos } = e.detail;
+         if (targetPos) {
+             window.dispatchEvent(new CustomEvent('onCameraPan', { detail: targetPos }));
+         }
+     };
+     window.addEventListener('onMessageClick', handleMessageClick);
+
      return () => {
          window.removeEventListener('onFacilityUpdate', handleUpdate);
          window.removeEventListener('onRoadPlaced', handleRoadPlaced);
          window.removeEventListener('onStaffSpawn', handleStaffSpawn);
          window.removeEventListener('onCoasterBuilt', handleCoasterBuilt);
          window.removeEventListener('onGameLoaded', handleGameLoaded);
+         window.removeEventListener('onFacilityDemolish', handleDemolish);
+         window.removeEventListener('onMessageClick', handleMessageClick);
      };
   }, []);
 
   // Sync state to worker when paused/speed changes
   useEffect(() => {
     if (workerRef.current) {
-      if (paused) {
+      if (gamePaused) {
         workerRef.current.postMessage({ type: 'STOP' });
       } else {
         workerRef.current.postMessage({ type: 'SET_SPEED', payload: { speed } });
@@ -205,30 +270,54 @@ export function App() {
     }
   }, [ticketMode, ticketPrice, day, month, unlockedTechs, stars]);
 
-  const paused = useGameState(state => state.gamePaused);
-
   return (
     <div style={{ width: '100%', height: '100%', position: 'relative' }}>
       <BabylonCanvas />
       
+      {/* Top HUD */}
       <div style={{ position: 'absolute', top: 20, left: '50%', transform: 'translateX(-50%)', zIndex: 10 }}>
         <HUD />
       </div>
 
+      {/* Bottom Build Bar */}
       <div style={{ position: 'absolute', bottom: 20, left: '50%', transform: 'translateX(-50%)', zIndex: 10, width: '100%', maxWidth: '800px', display: 'flex', justifyContent: 'center' }}>
         {useParkState(s => s.coasterBuilderMode) ? <CoasterEditor /> : <BuildBar />}
-        {/* Message feed (bottom left) */}
-        <div style={{ position: 'absolute', bottom: 80, left: 20, zIndex: 10 }}>
-          <MessageFeed />
-        </div>
-        {/* Mini map (bottom right) */}
-        <div style={{ position: 'absolute', bottom: 20, right: 20, zIndex: 10 }}>
-          <MiniMap />
-        </div>
-        {/* Info cards */}
-        {selectedFacilityId && <FacilityInfoCard />}
-        {selectedVisitorId && <VisitorInfoCard />}
       </div>
+
+      {/* Message feed (bottom left) */}
+      <div style={{ position: 'absolute', bottom: 100, left: 20, zIndex: 10 }}>
+        <MessageFeed />
+      </div>
+
+      {/* Mini map (bottom right) */}
+      <div style={{ position: 'absolute', bottom: 20, right: 20, zIndex: 10 }}>
+        <MiniMap />
+      </div>
+
+      {/* Info cards */}
+      {selectedFacilityId && <FacilityInfoCard />}
+      {selectedVisitorId && <VisitorInfoCard />}
+
+      {/* Auto-save indicator */}
+      {isSaving && (
+        <div style={{
+          position: 'absolute', top: 70, left: '50%', transform: 'translateX(-50%)',
+          zIndex: 20, background: 'rgba(244, 162, 35, 0.9)', padding: '6px 16px',
+          borderRadius: 6, fontSize: 13, fontWeight: 500, color: '#fff',
+          animation: 'fadeInOut 1.5s ease-in-out'
+        }}>
+          💾 保存中...
+        </div>
+      )}
+
+      <style>{`
+        @keyframes fadeInOut {
+          0% { opacity: 0; }
+          20% { opacity: 1; }
+          80% { opacity: 1; }
+          100% { opacity: 0; }
+        }
+      `}</style>
     </div>
   );
 }

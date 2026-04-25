@@ -1,34 +1,119 @@
 .visitor-info-card {
-  position: absolute;
-  top: 80px;
-  left: 20px;
+  position: fixed;
+  top: 50%;
+  right: 24px;
+  transform: translateY(-50%);
   width: 260px;
-  background: rgba(15, 23, 42, 0.9);
+  background: rgba(18, 22, 32, 0.95);
   backdrop-filter: blur(12px);
   border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 16px;
-  padding: 20px;
-  color: #f8fafc;
-  font-family: 'Inter', sans-serif;
-  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3);
+  border-radius: 12px;
+  padding: 16px;
   z-index: 100;
-  animation: fadeIn 0.2s ease-out;
+  color: #e0e0e0;
+  font-size: 14px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
 }
 
-.visitor-info-card h3 {
-  margin: 0 0 12px 0;
+.vic-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.vic-title {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
   font-size: 16px;
-  font-weight: 700;
-  color: #f59e0b;
+  font-weight: 600;
 }
 
-.visitor-info-card p {
-  margin: 6px 0;
+.vic-state {
+  font-size: 12px;
+  font-weight: 400;
+  color: #aaa;
+}
+
+.vic-close {
+  background: rgba(255, 255, 255, 0.08);
+  border: none;
+  border-radius: 6px;
+  padding: 4px;
+  cursor: pointer;
+  color: #aaa;
+  transition: background 0.2s;
+}
+.vic-close:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.vic-divider {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.08);
+  margin: 10px 0;
+}
+
+.vic-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.vic-stat-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.vic-stat-row span {
+  color: #999;
+}
+
+.vic-needs {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.vic-need-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.vic-need-label {
+  width: 36px;
+  font-size: 12px;
+  color: #999;
+  text-align: right;
+}
+
+.vic-need-bar-bg {
+  flex: 1;
+  height: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.vic-need-bar-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.3s ease;
+}
+
+.vic-need-value {
+  width: 28px;
+  font-size: 11px;
+  color: #bbb;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.vic-thought {
   font-size: 13px;
-  color: #cbd5e1;
-}
-
-@keyframes fadeIn {
-  from { opacity: 0; transform: translateY(10px); }
-  to { opacity: 1; transform: translateY(0); }
+  color: #ccc;
+  font-style: italic;
+  text-align: center;
+  padding: 4px 0;
 }

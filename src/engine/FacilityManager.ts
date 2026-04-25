@@ -1,4 +1,4 @@
-import { Scene, MeshBuilder, StandardMaterial, Color3, Vector3, TransformNode, Mesh, ShadowGenerator, CSG, Curve3, Path3D, Animation } from '@babylonjs/core';
+import { Scene, MeshBuilder, StandardMaterial, Color3, Vector3, TransformNode, Mesh, ShadowGenerator, CSG, Curve3, Path3D, Animation, SineEase, EasingFunction } from '@babylonjs/core';
 import { CONSTANTS } from '../config/constants';
 import { useParkState } from '../store/useParkState';
 import type { PlacedFacility, FacilityDef } from '../types';
@@ -81,6 +81,7 @@ export class FacilityManager {
         switch (def.category) {
             case 'shop':
                 this.createShopMesh(def, dummyParent);
+                break;
             case 'facility':
                 this.createFacilityMesh(facility.typeId, def, dummyParent);
                 break;
@@ -177,8 +178,8 @@ export class FacilityManager {
               ];
 
               // Smooth easing
-              const func = new BABYLON.SineEase();
-              func.setEasingMode(BABYLON.EasingFunction.EASINGMODE_EASEINOUT);
+              const func = new SineEase();
+              func.setEasingMode(EasingFunction.EASINGMODE_EASEINOUT);
 
               const anim = new Animation("swingAnim", "rotation.x", 30, Animation.ANIMATIONTYPE_FLOAT, Animation.ANIMATIONLOOPMODE_CYCLE);
               anim.setKeys(keys);
