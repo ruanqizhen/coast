@@ -17,7 +17,7 @@ export function BabylonCanvas() {
 
     const handlePlacement = (e: Event) => {
       const customEvent = e as CustomEvent<{ id: FacilityType | 'cleaner' | 'mechanic' | 'security' | 'entertainer'; x: number; z: number; rotation: number }>;
-      const { id, x, z, rotation } = customEvent.detail;
+      const { id, x, z, rotation = 0 } = customEvent.detail;
       
       const { deductMoney } = useGameState.getState();
       const { addFacility, exitPlacementMode } = useParkState.getState();

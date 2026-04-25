@@ -1,4 +1,4 @@
-import { Scene, MeshBuilder, StandardMaterial, Color3, Vector3, TransformNode, Mesh, ShadowGenerator, CSG, Curve3, Path3D, Animation, SineEase, EasingFunction } from '@babylonjs/core';
+import { Scene, MeshBuilder, StandardMaterial, Color3, Vector3, TransformNode, Mesh, ShadowGenerator, CSG, Curve3, Path3D, Animation } from '@babylonjs/core';
 import { CONSTANTS } from '../config/constants';
 import { useParkState } from '../store/useParkState';
 import type { PlacedFacility, FacilityDef } from '../types';
@@ -68,7 +68,7 @@ export class FacilityManager {
         if (def.category === 'gentle') this.createGentleMesh(facility.typeId, def, root);
         else this.createThrillMesh(facility.typeId, def, root);
         root.position = new Vector3(posX, 0, posZ);
-        root.rotation.y = facility.rotation;
+        root.rotation.y = facility.rotation || 0;
         this.meshes.set(facility.instanceId, root);
         this.startFacilityAnimations(facility.typeId, root);
         return;
@@ -111,7 +111,7 @@ export class FacilityManager {
     if (template) {
         const instance = template.createInstance(facility.instanceId);
         instance.position = new Vector3(posX, 0, posZ);
-        instance.rotation.y = facility.rotation;
+        instance.rotation.y = facility.rotation || 0;
         
         if (this.shadowGen) {
             this.shadowGen.addShadowCaster(instance, true);
@@ -171,19 +171,18 @@ export class FacilityManager {
               
               const keys = [
                   { frame: 0, value: 0 },
+                  { frame: 30, value: Math.PI / 6 },
                   { frame: 60, value: Math.PI / 3 },
+                  { frame: 90, value: Math.PI / 6 },
                   { frame: 120, value: 0 },
+                  { frame: 150, value: -Math.PI / 6 },
                   { frame: 180, value: -Math.PI / 3 },
+                  { frame: 210, value: -Math.PI / 6 },
                   { frame: 240, value: 0 }
               ];
 
-              // Smooth easing
-              const func = new SineEase();
-              func.setEasingMode(EasingFunction.EASINGMODE_EASEINOUT);
-
               const anim = new Animation("swingAnim", "rotation.x", 30, Animation.ANIMATIONTYPE_FLOAT, Animation.ANIMATIONLOOPMODE_CYCLE);
               anim.setKeys(keys);
-              anim.setEasingFunction(func);
               
               pivot.animations = [];
               pivot.animations.push(anim);
