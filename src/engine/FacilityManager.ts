@@ -126,13 +126,16 @@ export class FacilityManager {
       if (typeId === 'ferris_wheel') {
           const wheelGroup = root.getChildMeshes().filter(m => m.name === 'wheel' || m.name === 'spoke' || m.name === 'cabin');
           if (wheelGroup.length > 0) {
+              const wheelMesh = wheelGroup.find(m => m.name === 'wheel');
+              const centerY = wheelMesh ? wheelMesh.position.y : 4.5;
+
               const wheelCore = new TransformNode("wheelCore", this.scene);
               wheelCore.parent = root;
               wheelGroup.forEach(m => m.setParent(wheelCore));
 
-              // Find center height
-              wheelCore.position.y = 4.5; // (maxDim+2)/2 + 2 = (3+2)/2+2 = 4.5
-              wheelGroup.forEach(m => { m.position.y -= 4.5; }); // center around pivot
+              // Set pivot to the exact center height
+              wheelCore.position.y = centerY;
+              wheelGroup.forEach(m => { m.position.y -= centerY; }); // center around pivot
 
               // Rotate entire wheel mechanism
               Animation.CreateAndStartAnimation("ferrisSpin", wheelCore, "rotation.x", 30, 1200, 0, Math.PI * 2, Animation.ANIMATIONLOOPMODE_CYCLE);
@@ -517,8 +520,7 @@ export class FacilityManager {
           // Spokes
           for (let i = 0; i < 8; i++) {
               const spoke = MeshBuilder.CreateCylinder("spoke", { height: maxDim+2, diameter: 0.1}, this.scene);
-              spoke.rotation.z = Math.PI/2;
-              spoke.rotation.y = (Math.PI / 8) * i;
+              spoke.rotation.x = (Math.PI / 8) * i;
               spoke.position.y = r + 2;
               spoke.material = wheelMat;
               spoke.parent = parent;
