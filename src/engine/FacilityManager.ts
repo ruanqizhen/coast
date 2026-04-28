@@ -375,6 +375,55 @@ export class FacilityManager {
           }
       }
 
+      // --- Coaster Train Animation ---
+      if (isClosed) {
+          const trainNode = new TransformNode(`${facility.instanceId}_train`, this.scene);
+          trainNode.parent = parent;
+
+          const numCars = 3;
+          const cars: Mesh[] = [];
+          
+          for (let i = 0; i < numCars; i++) {
+              const car = MeshBuilder.CreateBox(`car_${i}`, { width: 0.8, height: 0.6, depth: 1.5 }, this.scene);
+              car.material = this.getPBR("carMat", i === 0 ? new Color3(0.9, 0.2, 0.2) : new Color3(0.2, 0.6, 0.9), 0.8, 0.2);
+              car.parent = trainNode;
+              this.registerShadows(car);
+              cars.push(car);
+          }
+
+          let t = 0;
+          const speed = 0.003; 
+          const carSpacing = 0.03; 
+          const tangents = path3d.getTangents();
+
+          const observer = this.scene.onBeforeRenderObservable.add(() => {
+              t = (t + speed) % 1;
+              
+              for (let i = 0; i < cars.length; i++) {
+                  let carT = (t - i * carSpacing);
+                  if (carT < 0) carT += 1;
+                  
+                  const fIndex = carT * (curve.length - 1);
+                  const idx = Math.floor(fIndex);
+                  const nextIdx = Math.min(idx + 1, curve.length - 1);
+                  const lerpFactor = fIndex - idx;
+
+                  const pt = Vector3.Lerp(curve[idx], curve[nextIdx], lerpFactor);
+                  const n = Vector3.Lerp(normals[idx], normals[nextIdx], lerpFactor).normalize();
+                  const tng = Vector3.Lerp(tangents[idx], tangents[nextIdx], lerpFactor).normalize();
+
+                  cars[i].position = pt.add(n.scale(0.6)); // ride slightly above track
+
+                  const target = cars[i].position.add(tng);
+                  cars[i].lookAt(target, 0, 0, 0, undefined, n);
+              }
+          });
+
+          trainNode.onDisposeObservable.add(() => {
+              this.scene.onBeforeRenderObservable.remove(observer);
+          });
+      }
+
       return parent;
   }
 

@@ -5,13 +5,13 @@ import {
   Sun, CloudRain, Cloud, CloudLightning, PartyPopper,
   BarChart2, Beaker, Camera, Save, FolderOpen, Map, Landmark
 } from 'lucide-react';
-import { saveManager } from '../engine/SaveSystem';
 import { useParkState } from '../store/useParkState';
-import type { SaveData, WeatherType } from '../types';
+import type { WeatherType } from '../types';
 import { DataDashboard } from './DataDashboard';
 import { ResearchTechTree } from './ResearchTechTree';
 import { LoanPanel } from './LoanPanel';
 import { ExpansionPanel } from './ExpansionPanel';
+import { SaveLoadModal } from './SaveLoadModal';
 
 const WEATHER_CONFIG: Record<WeatherType, { icon: React.ReactNode; label: string; color: string }> = {
   sunny:      { icon: <Sun size={16} />,            label: '晴天', color: '#F4A223' },
@@ -42,53 +42,13 @@ export function HUD() {
   const [showResearch, setShowResearch] = React.useState(false);
   const [showLoan, setShowLoan] = React.useState(false);
   const [showExpansion, setShowExpansion] = React.useState(false);
+  const [showSaveModal, setShowSaveModal] = React.useState(false);
 
   const weatherCfg = WEATHER_CONFIG[weather] || WEATHER_CONFIG.sunny;
   const nextWeatherCfg = WEATHER_CONFIG[nextWeather] || WEATHER_CONFIG.cloudy;
 
   const takeScreenshot = () => {
      window.dispatchEvent(new CustomEvent('onTakeScreenshot'));
-  };
-
-  const handleSave = async () => {
-      const gState = useGameState.getState();
-      const pState = useParkState.getState();
-      
-      const data: SaveData = {
-          version: "1.0.0",
-          park: {
-              name: "My Coast Park",
-              size: gState.gridSize,
-              money: gState.money,
-              date: { day: gState.day, month: gState.month },
-              rating: gState.rating,
-              stars: gState.stars,
-              settings: { ticketMode: gState.ticketMode, ticketPrice: gState.ticketPrice, speedMultiplier: gState.speed }
-          },
-          roads: pState.roads,
-          facilities: pState.facilities,
-          staff: Object.values(pState.staff).map(s => ({ id: s.id, type: s.type, zone: s.patrolZone })),
-          research: { monthlyBudget: gState.monthlyResearchBudget, accumulatedPoints: gState.researchPoints, unlocked: gState.unlockedTechs },
-          visitors: Object.values(pState.visitors),
-          economy: { loan: gState.loan, historicalData: gState.historicalData },
-          weather: gState.weather,
-          nextWeather: gState.nextWeather
-      };
-      
-      gState.setSaving(true);
-      await saveManager.save('autosave_coast_1', data);
-      gState.setSaving(false);
-      gState.addMessage({ id: `msg_${Date.now()}`, text: "游戏已保存", priority: 'info', timestamp: Date.now() });
-  };
-
-  const handleLoad = async () => {
-      const data = await saveManager.load('autosave_coast_1');
-      if (data) {
-          window.dispatchEvent(new CustomEvent('onGameLoaded', { detail: data }));
-          useGameState.getState().addMessage({ id: `msg_${Date.now()}`, text: "游戏已读取", priority: 'info', timestamp: Date.now() });
-      } else {
-          alert("找不到存档");
-      }
   };
 
   return (
@@ -152,11 +112,11 @@ export function HUD() {
         <Camera size={16} /> 截图
       </button>
 
-      <button onClick={handleSave} className="glass-pill hud-btn" style={{ background: '#F4A223' }}>
+      <button onClick={() => setShowSaveModal(true)} className="glass-pill hud-btn" style={{ background: '#F4A223' }}>
         <Save size={16} /> 保存
       </button>
 
-      <button onClick={handleLoad} className="glass-pill hud-btn" style={{ background: '#F4A223' }}>
+      <button onClick={() => setShowSaveModal(true)} className="glass-pill hud-btn" style={{ background: '#F4A223' }}>
         <FolderOpen size={16} /> 读取
       </button>
 
@@ -184,6 +144,7 @@ export function HUD() {
       {showResearch && <ResearchTechTree onClose={() => setShowResearch(false)} />}
       {showLoan && <LoanPanel onClose={() => setShowLoan(false)} />}
       {showExpansion && <ExpansionPanel onClose={() => setShowExpansion(false)} />}
+      {showSaveModal && <SaveLoadModal onClose={() => setShowSaveModal(false)} />}
 
       <style>{`
         .hud-btn { cursor: pointer; transition: opacity 0.2s; }
