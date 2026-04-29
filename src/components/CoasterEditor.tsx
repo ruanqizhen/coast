@@ -2,11 +2,12 @@ import { useState } from 'react';
 import { useParkState } from '../store/useParkState';
 import { useGameState } from '../store/useGameState';
 import type { TrackPieceType } from '../types';
-import { MoveRight, TrendingUp, TrendingDown, RefreshCcw, Check, X, Lock, Undo2 } from 'lucide-react';
+import { MoveRight, TrendingUp, TrendingDown, RefreshCcw, Check, X, Lock, Undo2, Wand2 } from 'lucide-react';
 import { CONSTANTS } from '../config/constants';
+import { findCoasterClosurePath } from '../utils/coasterPathfinder';
 
 export function CoasterEditor() {
-  const { currentCoasterPieces, addCoasterPiece, undoCoasterPiece, clearCoasterPieces, toggleCoasterBuilder, selectedFacilityToPlace } = useParkState();
+  const { currentCoasterPieces, addCoasterPiece, addCoasterPieces, undoCoasterPiece, clearCoasterPieces, toggleCoasterBuilder, selectedFacilityToPlace } = useParkState();
   const deductMoney = useGameState(state => state.deductMoney);
   const addMoney = useGameState(state => state.addMoney);
   
@@ -80,6 +81,52 @@ export function CoasterEditor() {
       }
   };
 
+  const handleAutoComplete = () => {
+      if (currentCoasterPieces.length < 1) return;
+      
+      const first = currentCoasterPieces[0];
+      const last = currentCoasterPieces[currentCoasterPieces.length - 1];
+
+      let currentH = 0;
+      for (const p of currentCoasterPieces) {
+          if (p.type === 'climb') currentH += 1;
+          if (p.type === 'dive') currentH -= 1;
+      }
+
+      const path = findCoasterClosurePath(
+          last.x, last.z, currentH,
+          first.x, first.z, 0, last.rotation
+      );
+
+      if (path) {
+          const cost = path.length * 50;
+          if (deductMoney(cost)) {
+              let lx = last.x;
+              let lz = last.z;
+              let lRot = last.rotation;
+              const newPieces: typeof currentCoasterPieces = [];
+              
+              path.forEach(act => {
+                  const rad = (lRot * Math.PI) / 180;
+                  const nx = lx + Math.round(Math.sin(rad)) * 2;
+                  const nz = lz + Math.round(Math.cos(rad)) * 2;
+                  newPieces.push({
+                      x: nx, z: nz, type: act.type, rotation: act.rotation, slopeAngle: act.slopeAngle
+                  });
+                  lx = nx;
+                  lz = nz;
+                  lRot = act.rotation;
+              });
+              
+              addCoasterPieces(newPieces);
+          } else {
+              alert(`资金不足！自动闭合需要 $${cost}`);
+          }
+      } else {
+          alert('无法找到自动闭合的路线，请尝试调整末端位置或高度！');
+      }
+  };
+
   const cancel = () => {
       toggleCoasterBuilder(false);
       clearCoasterPieces();
@@ -140,18 +187,33 @@ export function CoasterEditor() {
          </button>
       </div>
 
-      <button 
-        onClick={handleComplete} 
-        disabled={!canComplete}
-        style={{ 
-            marginTop: 8, padding: 12, 
-            background: canComplete ? '#44BBA4' : '#333', 
-            borderRadius: 6, display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'center', width: '100%',
-            cursor: canComplete ? 'pointer' : 'not-allowed',
-            opacity: canComplete ? 1 : 0.6
-        }}>
-          <Check size={16} /> 完成轨道闭合并测试
-      </button>
+      <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+          <button 
+            onClick={handleAutoComplete} 
+            disabled={currentCoasterPieces.length < 1 || isLoopClosed()}
+            style={{ 
+                flex: 1, padding: 12, 
+                background: (currentCoasterPieces.length > 0 && !isLoopClosed()) ? '#F4D03F' : '#333', color: '#111', fontWeight: 'bold',
+                borderRadius: 6, display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'center',
+                cursor: (currentCoasterPieces.length > 0 && !isLoopClosed()) ? 'pointer' : 'not-allowed',
+                opacity: (currentCoasterPieces.length > 0 && !isLoopClosed()) ? 1 : 0.6
+            }}>
+              <Wand2 size={16} /> 自动闭合
+          </button>
+          
+          <button 
+            onClick={handleComplete} 
+            disabled={!canComplete}
+            style={{ 
+                flex: 1, padding: 12, 
+                background: canComplete ? '#44BBA4' : '#333', 
+                borderRadius: 6, display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'center',
+                cursor: canComplete ? 'pointer' : 'not-allowed',
+                opacity: canComplete ? 1 : 0.6
+            }}>
+              <Check size={16} /> 完成轨道测试
+          </button>
+      </div>
     </div>
   );
 }

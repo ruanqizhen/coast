@@ -93,9 +93,7 @@ export function App() {
       } else if (type === 'RATING_UPDATE') {
         setRating(payload);
       } else if (type === 'ECONOMY_UPDATE') {
-        if (payload.type === 'SPEND') {
-          addMoney(payload.amount);
-        }
+        addMoney(payload.amount);
       } else if (type === 'FACILITY_BREAKDOWN') {
          window.dispatchEvent(new CustomEvent('onFacilityUpdate', { detail: { id: payload, breakdown: true }}));
       } else if (type === 'FACILITY_FIXED') {
