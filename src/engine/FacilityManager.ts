@@ -1,7 +1,7 @@
 import { Scene, MeshBuilder, StandardMaterial, Color3, Vector3, TransformNode, Mesh, ShadowGenerator, CSG, Curve3, Path3D, Animation, ParticleSystem, DynamicTexture, Color4 } from '@babylonjs/core';
 import { CONSTANTS } from '../config/constants';
 import { useParkState } from '../store/useParkState';
-import type { PlacedFacility, FacilityDef } from '../types';
+import type { PlacedFacility, FacilityDef, CoasterTrackPiece } from '../types';
 import { FACILITIES } from '../config/facilities';
 
 export class FacilityManager {
@@ -9,6 +9,7 @@ export class FacilityManager {
   private shadowGen: ShadowGenerator;
   private meshes: Map<string, TransformNode | Mesh> = new Map();
   private templates: Map<string, Mesh> = new Map();
+  private previewMesh: TransformNode | null = null;
 
   constructor(scene: Scene, shadowGen: ShadowGenerator) {
     this.scene = scene;
@@ -23,6 +24,10 @@ export class FacilityManager {
       );
       added.forEach(fac => this.spawnFacility(fac));
       removed.forEach(fac => this.despawnFacility(fac.instanceId));
+
+      if (state.currentCoasterPieces !== prevState.currentCoasterPieces) {
+          this.updateCoasterPreview(state.currentCoasterPieces);
+      }
     });
   }
 
@@ -257,11 +262,25 @@ export class FacilityManager {
   }
 
   private createCoasterTrack(facility: PlacedFacility) {
-      const parent = new TransformNode(facility.instanceId, this.scene);
+      const pieces = facility.trackPieces || [];
+      return this.generateTrackMesh(pieces, facility.instanceId, false);
+  }
+
+  private updateCoasterPreview(pieces: CoasterTrackPiece[]) {
+      if (this.previewMesh) {
+          this.previewMesh.dispose();
+          this.previewMesh = null;
+      }
+      if (pieces.length > 0) {
+          this.previewMesh = this.generateTrackMesh(pieces, "coaster_preview", true);
+      }
+  }
+
+  private generateTrackMesh(pieces: CoasterTrackPiece[], instanceId: string, isPreview: boolean): TransformNode {
+      const parent = new TransformNode(instanceId, this.scene);
       const trackPoints: Vector3[] = [];
       let currentHeight = 2;
       
-      const pieces = facility.trackPieces || [];
       if (pieces.length === 0) return parent;
 
       pieces.forEach((piece) => {
@@ -315,9 +334,16 @@ export class FacilityManager {
 
       const spineMat = this.getPBR("spineMat", Color3.FromHexString("#222222"), 0.5);
       const railMat = this.getPBR("railMat", Color3.FromHexString("#E84855"), 0.8);
+      const columnMat = this.getPBR("colMat", new Color3(0.8, 0.8, 0.8), 0.1);
+
+      if (isPreview) {
+          spineMat.alpha = 0.5;
+          railMat.alpha = 0.5;
+          columnMat.alpha = 0.5;
+      }
       
       // Main Center Spine
-      const spineTube = MeshBuilder.CreateTube(`${facility.instanceId}_spine`, {
+      const spineTube = MeshBuilder.CreateTube(`${instanceId}_spine`, {
           path: points,
           radius: 0.25,
           tessellation: 12,
@@ -347,14 +373,14 @@ export class FacilityManager {
           rightRailPoints.push(pt.add(bn.scale(-railOffset)).add(up.scale(railUpOffset)));
       }
 
-      const leftTube = MeshBuilder.CreateTube(`${facility.instanceId}_left`, {
+      const leftTube = MeshBuilder.CreateTube(`${instanceId}_left`, {
           path: leftRailPoints, radius: 0.1, tessellation: 8
       }, this.scene);
       leftTube.material = railMat;
       leftTube.parent = parent;
       this.registerShadows(leftTube);
 
-      const rightTube = MeshBuilder.CreateTube(`${facility.instanceId}_right`, {
+      const rightTube = MeshBuilder.CreateTube(`${instanceId}_right`, {
           path: rightRailPoints, radius: 0.1, tessellation: 8
       }, this.scene);
       rightTube.material = railMat;
@@ -362,7 +388,6 @@ export class FacilityManager {
       this.registerShadows(rightTube);
 
       // Support Columns (placing every 15th node)
-      const columnMat = this.getPBR("colMat", new Color3(0.8, 0.8, 0.8), 0.1);
       for (let i = 0; i < curve.length; i += 15) {
           const pt = curve[i];
           const height = pt.y;
@@ -376,8 +401,8 @@ export class FacilityManager {
       }
 
       // --- Coaster Train Animation ---
-      if (isClosed) {
-          const trainNode = new TransformNode(`${facility.instanceId}_train`, this.scene);
+      if (isClosed && !isPreview) {
+          const trainNode = new TransformNode(`${instanceId}_train`, this.scene);
           trainNode.parent = parent;
 
           const numCars = 3;

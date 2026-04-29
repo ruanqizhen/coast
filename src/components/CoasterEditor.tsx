@@ -2,12 +2,13 @@ import { useState } from 'react';
 import { useParkState } from '../store/useParkState';
 import { useGameState } from '../store/useGameState';
 import type { TrackPieceType } from '../types';
-import { MoveRight, TrendingUp, TrendingDown, RefreshCcw, Check, X, Lock } from 'lucide-react';
+import { MoveRight, TrendingUp, TrendingDown, RefreshCcw, Check, X, Lock, Undo2 } from 'lucide-react';
 import { CONSTANTS } from '../config/constants';
 
 export function CoasterEditor() {
-  const { currentCoasterPieces, addCoasterPiece, clearCoasterPieces, toggleCoasterBuilder, selectedFacilityToPlace } = useParkState();
+  const { currentCoasterPieces, addCoasterPiece, undoCoasterPiece, clearCoasterPieces, toggleCoasterBuilder, selectedFacilityToPlace } = useParkState();
   const deductMoney = useGameState(state => state.deductMoney);
+  const addMoney = useGameState(state => state.addMoney);
   
   const [rotation, setRotation] = useState(0);
   const [slopeAngle, setSlopeAngle] = useState(0);
@@ -29,6 +30,13 @@ export function CoasterEditor() {
           addCoasterPiece({
               x: nx, z: nz, type, rotation, slopeAngle
           });
+      }
+  };
+
+  const handleUndo = () => {
+      if (currentCoasterPieces.length > 0) {
+          undoCoasterPiece();
+          addMoney(50);
       }
   };
 
@@ -86,8 +94,13 @@ export function CoasterEditor() {
          <button onClick={cancel}><X size={16} /></button>
       </div>
 
-      <div style={{ display: 'flex', gap: 16, borderBottom: '1px solid var(--panel-border)', paddingBottom: 16 }}>
-          <div style={{ flex: 1 }}>轨道节数: <strong style={{ color: '#4DB8FF' }}>{currentCoasterPieces.length}</strong></div>
+      <div style={{ display: 'flex', gap: 16, borderBottom: '1px solid var(--panel-border)', paddingBottom: 16, alignItems: 'center' }}>
+          <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 8 }}>
+              轨道节数: <strong style={{ color: '#4DB8FF' }}>{currentCoasterPieces.length}</strong>
+              <button onClick={handleUndo} disabled={currentCoasterPieces.length === 0} style={{ padding: '4px 8px', background: currentCoasterPieces.length > 0 ? '#E84855' : '#555', borderRadius: 4, display: 'flex', alignItems: 'center', gap: 4, cursor: currentCoasterPieces.length > 0 ? 'pointer' : 'not-allowed', marginLeft: 'auto' }}>
+                  <Undo2 size={14} /> 撤销
+              </button>
+          </div>
           <div style={{ flex: 1, color: maxG > 6 ? '#E84855' : '#44BBA4' }}>
               峰值 G 力: <strong>{maxG.toFixed(1)}G</strong>
               {maxG > 6 && <Lock size={12} style={{ marginLeft: 4 }} />}

@@ -34,6 +34,7 @@ interface ParkState {
   rotatePlacement: () => void;
   toggleCoasterBuilder: (active: boolean) => void;
   addCoasterPiece: (piece: CoasterTrackPiece) => void;
+  undoCoasterPiece: () => void;
   clearCoasterPieces: () => void;
 
   // Selection
@@ -100,6 +101,9 @@ export const useParkState = create<ParkState>((set) => ({
   toggleCoasterBuilder: (active) => set({ coasterBuilderMode: active }),
   addCoasterPiece: (piece) => set((state) => ({
     currentCoasterPieces: [...state.currentCoasterPieces, piece],
+  })),
+  undoCoasterPiece: () => set((state) => ({
+    currentCoasterPieces: state.currentCoasterPieces.slice(0, -1),
   })),
   clearCoasterPieces: () => set({ currentCoasterPieces: [] }),
 
