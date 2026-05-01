@@ -85,7 +85,7 @@ export function findCoasterClosurePath(
         ];
 
         for (const nextRot of possibleRots) {
-            const rRad = (nextRot * Math.PI) / 180;
+            const rRad = (current.rot * Math.PI) / 180;
             const nextX = current.x + Math.round(Math.sin(rRad)) * 2;
             const nextZ = current.z + Math.round(Math.cos(rRad)) * 2;
             
@@ -103,7 +103,10 @@ export function findCoasterClosurePath(
                 let elevationPenalty = (type !== 'straight') ? 1 : 0;
                 
                 const g = current.g + 1 + turnPenalty + elevationPenalty * 0.5;
-                const h_cost = Math.abs(targetX - nextX) + Math.abs(targetZ - nextZ) + Math.abs(targetH - nextH) * 4;
+                const dx = Math.abs(targetX - nextX);
+                const dz = Math.abs(targetZ - nextZ);
+                const dh = Math.abs(targetH - nextH);
+                const h_cost = Math.max((dx + dz) / 2, dh);
                 
                 const neighbor: StateNode = {
                     x: nextX,

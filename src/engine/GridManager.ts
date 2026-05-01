@@ -108,7 +108,7 @@ export class GridManager {
 
       switch (evType) {
         case PointerEventTypes.POINTERMOVE: {
-          if (!state.placementMode || !state.selectedFacilityToPlace) {
+          if (!state.placementMode || !state.selectedFacilityToPlace || state.coasterBuilderMode) {
             this.pointerBox.isVisible = false;
             break;
           }
@@ -152,7 +152,7 @@ export class GridManager {
           }
 
           if (pointerInfo.event.button !== 0) break;
-          if (!state.placementMode || !state.selectedFacilityToPlace) break;
+          if (!state.placementMode || !state.selectedFacilityToPlace || state.coasterBuilderMode) break;
 
           const mat = this.pointerBox.material as StandardMaterial;
           if (!this.pointerBox.isVisible || mat.diffuseColor.g !== 1) break;

@@ -7,7 +7,7 @@ import { CONSTANTS } from '../config/constants';
 import { findCoasterClosurePath } from '../utils/coasterPathfinder';
 
 export function CoasterEditor() {
-  const { currentCoasterPieces, addCoasterPiece, addCoasterPieces, undoCoasterPiece, clearCoasterPieces, toggleCoasterBuilder, selectedFacilityToPlace } = useParkState();
+  const { currentCoasterPieces, addCoasterPiece, addCoasterPieces, undoCoasterPiece, clearCoasterPieces, toggleCoasterBuilder, selectedFacilityToPlace, exitPlacementMode } = useParkState();
   const deductMoney = useGameState(state => state.deductMoney);
   const addMoney = useGameState(state => state.addMoney);
   
@@ -76,6 +76,7 @@ export function CoasterEditor() {
           window.dispatchEvent(new CustomEvent('onCoasterBuilt', { detail: { typeId: selectedFacilityToPlace, pieces: currentCoasterPieces }}));
           toggleCoasterBuilder(false);
           clearCoasterPieces();
+          exitPlacementMode();
       } else {
           alert('轨道未闭合！请确保最后一节轨道能够连回起点。');
       }
@@ -130,6 +131,7 @@ export function CoasterEditor() {
   const cancel = () => {
       toggleCoasterBuilder(false);
       clearCoasterPieces();
+      exitPlacementMode();
   };
 
   const canComplete = isLoopClosed() && maxG <= 6;

@@ -327,8 +327,8 @@ export class FacilityManager {
           }
       }
 
-      // Check loop closure dynamically
-      const isClosed = trackPoints.length > 3 && Vector3.Distance(trackPoints[0], trackPoints[trackPoints.length - 1]) < CONSTANTS.CELL_SIZE;
+      // Check loop closure dynamically (last piece is 4 world units away from start)
+      const isClosed = trackPoints.length > 3 && Vector3.Distance(trackPoints[0], trackPoints[trackPoints.length - 1]) <= CONSTANTS.CELL_SIZE * 2.5;
       const spline = Curve3.CreateCatmullRomSpline(trackPoints, 15, isClosed);
       const points = spline.getPoints();
 
