@@ -296,7 +296,7 @@ export class FacilityManager {
           this.previewMesh = null;
       }
       if (pieces.length > 0) {
-          this.previewMesh = this.generateTrackMesh(pieces, "coaster_preview", true);
+          this.previewMesh = this.generateTrackMesh(pieces, "preview_coaster", true);
       }
   }
 
@@ -416,7 +416,7 @@ export class FacilityManager {
           const pt = curve[i];
           const height = pt.y;
           if (height > 0.5) {
-              const col = MeshBuilder.CreateCylinder("col", { height, diameter: 0.3 }, this.scene);
+              const col = MeshBuilder.CreateCylinder(`${instanceId}_col`, { height, diameter: 0.3 }, this.scene);
               col.position = new Vector3(pt.x, height / 2, pt.z);
               col.material = columnMat;
               col.parent = parent;

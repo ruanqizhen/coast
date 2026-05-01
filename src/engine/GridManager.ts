@@ -136,7 +136,10 @@ export class GridManager {
 
       switch (evType) {
         case PointerEventTypes.POINTERMOVE: {
+          const canvas = this.scene.getEngine().getRenderingCanvas();
+          
           if (this.isDraggingCoaster && this.dragStartGrid) {
+              if (canvas) canvas.style.cursor = 'move';
               const gp = getGroundPoint();
               if (gp) {
                   const gridX = Math.floor(gp.x / CONSTANTS.CELL_SIZE);
@@ -150,7 +153,17 @@ export class GridManager {
               break;
           }
 
-          if (!state.placementMode || !state.selectedFacilityToPlace || state.coasterBuilderMode) {
+          if (state.coasterBuilderMode) {
+              const pickedMesh = pointerInfo.pickInfo?.pickedMesh;
+              const isOverCoaster = pickedMesh && (pickedMesh.name.startsWith('preview_coaster') || pickedMesh.parent?.name === 'preview_coaster');
+              if (canvas) canvas.style.cursor = isOverCoaster ? 'move' : 'default';
+              this.pointerBox.isVisible = false;
+              break;
+          }
+
+          if (canvas) canvas.style.cursor = 'default';
+
+          if (!state.placementMode || !state.selectedFacilityToPlace) {
             this.pointerBox.isVisible = false;
             break;
           }
@@ -188,7 +201,7 @@ export class GridManager {
         case PointerEventTypes.POINTERDOWN: {
           if (state.coasterBuilderMode && pointerInfo.event.button === 0) {
               const pickedMesh = pointerInfo.pickInfo?.pickedMesh;
-              if (pickedMesh && pickedMesh.parent?.name === 'preview_coaster') {
+              if (pickedMesh && (pickedMesh.name.startsWith('preview_coaster') || pickedMesh.parent?.name === 'preview_coaster')) {
                   const gp = getGroundPoint();
                   if (gp) {
                       this.isDraggingCoaster = true;
@@ -245,7 +258,10 @@ export class GridManager {
                 useParkState.getState().setCoasterDragOffset(null);
                 
                 const canvas = this.scene.getEngine().getRenderingCanvas();
-                if (canvas) this.scene.activeCamera?.attachControl(canvas, true);
+                if (canvas) {
+                    this.scene.activeCamera?.attachControl(canvas, true);
+                    canvas.style.cursor = 'default';
+                }
             }
             break;
         }

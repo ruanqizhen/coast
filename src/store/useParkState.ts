@@ -91,6 +91,7 @@ export const useParkState = create<ParkState>((set) => ({
     placementMode: true,
     selectedFacilityToPlace: type,
     placementCategory: category,
+    coasterBuilderMode: false,
   }),
   exitPlacementMode: () => set({
     placementMode: false,
