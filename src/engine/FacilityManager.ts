@@ -28,6 +28,30 @@ export class FacilityManager {
       if (state.currentCoasterPieces !== prevState.currentCoasterPieces) {
           this.updateCoasterPreview(state.currentCoasterPieces);
       }
+
+      if (state.coasterDragOffset !== prevState.coasterDragOffset) {
+          if (this.previewMesh) {
+              if (state.coasterDragOffset) {
+                  const { dx, dz, isValid } = state.coasterDragOffset;
+                  this.previewMesh.position.x = dx * CONSTANTS.CELL_SIZE;
+                  this.previewMesh.position.z = dz * CONSTANTS.CELL_SIZE;
+                  
+                  // Tint children meshes
+                  this.previewMesh.getChildMeshes().forEach(m => {
+                      if (m.material) {
+                          (m.material as StandardMaterial).emissiveColor = isValid ? new Color3(0, 0, 0) : new Color3(0.5, 0, 0);
+                      }
+                  });
+              } else {
+                  this.previewMesh.position.copyFromFloats(0, 0, 0);
+                  this.previewMesh.getChildMeshes().forEach(m => {
+                      if (m.material) {
+                          (m.material as StandardMaterial).emissiveColor = new Color3(0, 0, 0);
+                      }
+                  });
+              }
+          }
+      }
     });
   }
 

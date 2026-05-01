@@ -15,6 +15,9 @@ export class GridManager {
   private pointerBox: Mesh;
   private gridLines: Mesh[] = [];
 
+  private isDraggingCoaster: boolean = false;
+  private dragStartGrid: { x: number, z: number } | null = null;
+
   constructor(scene: Scene) {
     this.scene = scene;
 
@@ -82,6 +85,31 @@ export class GridManager {
     }
   }
 
+  private checkCoasterOverlap(pieces: {x: number, z: number}[], dx: number, dz: number, facilities: any[]): boolean {
+      for (const piece of pieces) {
+          const nx = piece.x + dx;
+          const nz = piece.z + dz;
+          if (nx < 0 || nz < 0 || nx >= CONSTANTS.GRID_SIZE || nz >= CONSTANTS.GRID_SIZE) {
+              return true; // Out of bounds
+          }
+          for (const fac of facilities) {
+              if (fac.typeId === 'coaster_wood' || fac.typeId === 'coaster_steel') continue; // Allow coasters to overlap coasters for now, or just self
+              const fdef = FACILITIES[fac.typeId as keyof typeof FACILITIES];
+              if (!fdef) continue;
+              let sx = fdef.sizeX;
+              let sz = fdef.sizeZ;
+              if (fac.rotation === 90 || fac.rotation === 270) {
+                  sx = fdef.sizeZ;
+                  sz = fdef.sizeX;
+              }
+              if (nx >= fac.x && nx < fac.x + sx && nz >= fac.z && nz < fac.z + sz) {
+                  return true; // Overlaps facility
+              }
+          }
+      }
+      return false;
+  }
+
   private setupInputs() {
     this.scene.onPointerObservable.add((pointerInfo) => {
       const state = useParkState.getState();
@@ -108,6 +136,20 @@ export class GridManager {
 
       switch (evType) {
         case PointerEventTypes.POINTERMOVE: {
+          if (this.isDraggingCoaster && this.dragStartGrid) {
+              const gp = getGroundPoint();
+              if (gp) {
+                  const gridX = Math.floor(gp.x / CONSTANTS.CELL_SIZE);
+                  const gridZ = Math.floor(gp.z / CONSTANTS.CELL_SIZE);
+                  const dx = gridX - this.dragStartGrid.x;
+                  const dz = gridZ - this.dragStartGrid.z;
+                  
+                  const isOverlap = this.checkCoasterOverlap(state.currentCoasterPieces, dx, dz, state.facilities);
+                  useParkState.getState().setCoasterDragOffset({ dx, dz, isValid: !isOverlap });
+              }
+              break;
+          }
+
           if (!state.placementMode || !state.selectedFacilityToPlace || state.coasterBuilderMode) {
             this.pointerBox.isVisible = false;
             break;
@@ -144,6 +186,23 @@ export class GridManager {
         }
 
         case PointerEventTypes.POINTERDOWN: {
+          if (state.coasterBuilderMode && pointerInfo.event.button === 0) {
+              const pickedMesh = pointerInfo.pickInfo?.pickedMesh;
+              if (pickedMesh && pickedMesh.parent?.name === 'preview_coaster') {
+                  const gp = getGroundPoint();
+                  if (gp) {
+                      this.isDraggingCoaster = true;
+                      this.dragStartGrid = {
+                          x: Math.floor(gp.x / CONSTANTS.CELL_SIZE),
+                          z: Math.floor(gp.z / CONSTANTS.CELL_SIZE)
+                      };
+                      const canvas = this.scene.getEngine().getRenderingCanvas();
+                      if (canvas) this.scene.activeCamera?.detachControl();
+                  }
+                  break;
+              }
+          }
+
           // Right click → cancel
           if (pointerInfo.event.button === 2 && state.placementMode) {
             useParkState.getState().exitPlacementMode();
@@ -174,6 +233,21 @@ export class GridManager {
           }
           this.pointerBox.isVisible = false;
           break;
+        }
+
+        case PointerEventTypes.POINTERUP: {
+            if (this.isDraggingCoaster) {
+                this.isDraggingCoaster = false;
+                const offset = useParkState.getState().coasterDragOffset;
+                if (offset && offset.isValid && (offset.dx !== 0 || offset.dz !== 0)) {
+                    useParkState.getState().shiftCoaster(offset.dx, offset.dz);
+                }
+                useParkState.getState().setCoasterDragOffset(null);
+                
+                const canvas = this.scene.getEngine().getRenderingCanvas();
+                if (canvas) this.scene.activeCamera?.attachControl(canvas, true);
+            }
+            break;
         }
       }
     });

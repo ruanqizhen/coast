@@ -19,6 +19,7 @@ interface ParkState {
   placementRotation: number; // 0, 90, 180, 270
   coasterBuilderMode: boolean;
   currentCoasterPieces: CoasterTrackPiece[];
+  coasterDragOffset: { dx: number, dz: number, isValid: boolean } | null;
 
   // Info Card State
   selectedFacilityId: string | null;
@@ -37,6 +38,8 @@ interface ParkState {
   addCoasterPieces: (pieces: CoasterTrackPiece[]) => void;
   undoCoasterPiece: () => void;
   clearCoasterPieces: () => void;
+  setCoasterDragOffset: (offset: { dx: number, dz: number, isValid: boolean } | null) => void;
+  shiftCoaster: (dx: number, dz: number) => void;
 
   // Selection
   selectFacility: (id: string | null) => void;
@@ -69,6 +72,7 @@ export const useParkState = create<ParkState>((set) => ({
   placementRotation: 0,
   coasterBuilderMode: false,
   currentCoasterPieces: [],
+  coasterDragOffset: null,
 
   selectedFacilityId: null,
   selectedVisitorId: null,
@@ -110,6 +114,14 @@ export const useParkState = create<ParkState>((set) => ({
     currentCoasterPieces: state.currentCoasterPieces.slice(0, -1),
   })),
   clearCoasterPieces: () => set({ currentCoasterPieces: [] }),
+  setCoasterDragOffset: (offset) => set({ coasterDragOffset: offset }),
+  shiftCoaster: (dx, dz) => set((state) => ({
+      currentCoasterPieces: state.currentCoasterPieces.map(p => ({
+          ...p,
+          x: p.x + dx,
+          z: p.z + dz
+      }))
+  })),
 
   selectFacility: (id) => set({ selectedFacilityId: id, selectedVisitorId: null }),
   selectVisitor: (id) => set({ selectedVisitorId: id, selectedFacilityId: null }),
