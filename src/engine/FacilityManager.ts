@@ -1,4 +1,4 @@
-import { Scene, MeshBuilder, StandardMaterial, Color3, Vector3, TransformNode, Mesh, ShadowGenerator, CSG, Curve3, Path3D, Animation, ParticleSystem, DynamicTexture, Color4, Quaternion } from '@babylonjs/core';
+import { Scene, MeshBuilder, StandardMaterial, Color3, Vector3, TransformNode, Mesh, ShadowGenerator, CSG, Curve3, Path3D, Animation, ParticleSystem, DynamicTexture, Color4, Quaternion, ActionManager } from '@babylonjs/core';
 import { CONSTANTS } from '../config/constants';
 import { useParkState } from '../store/useParkState';
 import type { PlacedFacility, FacilityDef, CoasterTrackPiece } from '../types';
@@ -308,10 +308,16 @@ export class FacilityManager {
       if (pieces.length === 0) return parent;
 
       pieces.forEach((piece) => {
+          // Calculate vertical change based on slope angle (pitch)
+          const slopeRad = ((piece.slopeAngle || 0) * Math.PI) / 180;
+          // Each piece spans CONSTANTS.CELL_SIZE (2m) in horizontal distance
+          const hChange = Math.tan(slopeRad) * CONSTANTS.CELL_SIZE;
+          currentHeight += hChange;
+
           if (piece.type === 'climb') {
-              currentHeight += 4;
+              currentHeight += 2;
           } else if (piece.type === 'dive') {
-              currentHeight -= 4;
+              currentHeight -= 2;
           }
           
           let px = piece.x * CONSTANTS.CELL_SIZE;
@@ -470,6 +476,13 @@ export class FacilityManager {
 
           trainNode.onDisposeObservable.add(() => {
               this.scene.onBeforeRenderObservable.remove(observer);
+          });
+      }
+
+      if (isPreview) {
+          parent.getChildMeshes().forEach(m => {
+              m.actionManager = new ActionManager(this.scene);
+              m.cursor = 'move';
           });
       }
 

@@ -75,10 +75,7 @@ export function CoasterEditor() {
   };
 
   const handleComplete = () => {
-      if (maxG > 6) {
-          alert('G力过载！当前轨道设计不安全，请修改后再尝试。');
-          return;
-      }
+      // G-force check removed as per user request
 
       if (isLoopClosed()) {
           window.dispatchEvent(new CustomEvent('onCoasterBuilt', { detail: { typeId: selectedFacilityToPlace, pieces: currentCoasterPieces }}));
@@ -98,9 +95,13 @@ export function CoasterEditor() {
 
       let currentH = 0;
       for (const p of currentCoasterPieces) {
+          const slopeRad = ((p.slopeAngle || 0) * Math.PI) / 180;
+          currentH += Math.tan(slopeRad); 
           if (p.type === 'climb') currentH += 1;
           if (p.type === 'dive') currentH -= 1;
       }
+      // Round to nearest integer for pathfinder
+      currentH = Math.round(currentH);
 
       const path = findCoasterClosurePath(
           last.x, last.z, currentH,
@@ -136,18 +137,82 @@ export function CoasterEditor() {
       }
   };
 
+  const handleRandomBuild = () => {
+      let attempts = 0;
+      let success = false;
+      
+      while (attempts < 20 && !success) {
+          attempts++;
+          const numRandom = 8 + Math.floor(Math.random() * 8);
+          let lx = CONSTANTS.GRID_SIZE / 2;
+          let lz = CONSTANTS.GRID_SIZE / 2;
+          let lRot = 0;
+          let lH = 0;
+          const newPieces: typeof currentCoasterPieces = [];
+
+          newPieces.push({ x: lx, z: lz, type: 'straight', rotation: 0, slopeAngle: 0 });
+
+          for (let i = 0; i < numRandom; i++) {
+              const types: TrackPieceType[] = ['straight', 'climb', 'dive', 'loop'];
+              const t = types[Math.floor(Math.random() * types.length)];
+              const rotChange = (Math.floor(Math.random() * 3) - 1) * 90;
+              const nextRot = (lRot + rotChange + 360) % 360;
+              const s = (Math.floor(Math.random() * 3) - 1) * 15;
+              const rad = (nextRot * Math.PI) / 180;
+              const nx = lx + Math.round(Math.sin(rad)) * 2;
+              const nz = lz + Math.round(Math.cos(rad)) * 2;
+
+              if (nx < 4 || nz < 4 || nx > CONSTANTS.GRID_SIZE - 4 || nz > CONSTANTS.GRID_SIZE - 4) break;
+
+              const slopeRad = (s * Math.PI) / 180;
+              let nextH = lH + Math.tan(slopeRad);
+              if (t === 'climb') nextH++;
+              if (t === 'dive') nextH--;
+              
+              if (nextH < 0) continue; // Safety: Ground check
+
+              newPieces.push({ x: nx, z: nz, type: t, rotation: nextRot, slopeAngle: s });
+              lx = nx; lz = nz; lRot = nextRot; lH = nextH;
+          }
+
+          const targetH = Math.round(lH);
+          const path = findCoasterClosurePath(lx, lz, targetH, newPieces[0].x, newPieces[0].z, 0, lRot);
+          
+          if (path) {
+              path.forEach(act => {
+                  const rad = (act.rotation * Math.PI) / 180;
+                  const nx = lx + Math.round(Math.sin(rad)) * 2;
+                  const nz = lz + Math.round(Math.cos(rad)) * 2;
+                  newPieces.push({ x: nx, z: nz, type: act.type, rotation: act.rotation, slopeAngle: act.slopeAngle });
+                  lx = nx; lz = nz;
+              });
+
+              const totalCost = newPieces.length * 50;
+              if (deductMoney(totalCost)) {
+                  clearCoasterPieces();
+                  addCoasterPieces(newPieces);
+                  success = true;
+              }
+          }
+      }
+
+      if (!success) {
+          alert('生成失败，请尝试增加资金或再次点击！');
+      }
+  };
+
   const cancel = () => {
       toggleCoasterBuilder(false);
       clearCoasterPieces();
       exitPlacementMode();
   };
 
-  const canComplete = isLoopClosed() && maxG <= 6;
+  const canComplete = isLoopClosed();
 
   return (
     <div className="hud-panel" style={{ width: 440, padding: 16, display: 'flex', flexDirection: 'column', gap: 16 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-         <h3 style={{ margin: 0, fontSize: 16 }}>过山车编辑器 (Phase 3)</h3>
+         <h3 style={{ margin: 0, fontSize: 16 }}>过山车编辑器</h3>
          <button onClick={cancel}><X size={16} /></button>
       </div>
 
@@ -164,7 +229,7 @@ export function CoasterEditor() {
           </div>
       </div>
       
-      {maxG > 6 && <div style={{ color: '#E84855', fontSize: 12, fontWeight: 600 }}>⚠️ 安全限制：G 力超过 6G 禁止运营！</div>}
+      {maxG > 6 && <div style={{ color: '#F4D03F', fontSize: 12, fontWeight: 600 }}>⚠️ 提示：当前设计 G 力较高，请谨慎运营。</div>}
       {!isLoopClosed() && currentCoasterPieces.length > 0 && <div style={{ color: '#888', fontSize: 12 }}>轨道尚未闭合 (首尾需相接)</div>}
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -196,6 +261,10 @@ export function CoasterEditor() {
              <RefreshCcw size={16} /> 回环 (-$50)
          </button>
       </div>
+
+      <button onClick={handleRandomBuild} style={{ width: '100%', padding: '12px', background: 'linear-gradient(135deg, #FF6B6B, #7B61FF)', borderRadius: 8, color: 'white', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'center', border: 'none', cursor: 'pointer', boxShadow: '0 4px 15px rgba(123, 97, 255, 0.3)' }}>
+          <RefreshCcw size={18} /> 随机生成艺术过山车 (一键狂欢)
+      </button>
 
       <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
           <button 

@@ -154,9 +154,6 @@ export class GridManager {
           }
 
           if (state.coasterBuilderMode) {
-              const pickedMesh = pointerInfo.pickInfo?.pickedMesh;
-              const isOverCoaster = pickedMesh && (pickedMesh.name.startsWith('preview_coaster') || pickedMesh.parent?.name === 'preview_coaster');
-              if (canvas) canvas.style.cursor = isOverCoaster ? 'move' : 'default';
               this.pointerBox.isVisible = false;
               break;
           }
