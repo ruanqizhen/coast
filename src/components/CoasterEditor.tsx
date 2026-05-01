@@ -15,19 +15,27 @@ export function CoasterEditor() {
   const [slopeAngle, setSlopeAngle] = useState(0);
 
   const handleAddPiece = (type: TrackPieceType) => {
-      // Calculate next position based on previous pieces and rotation
       let nx = CONSTANTS.GRID_SIZE / 2;
       let nz = CONSTANTS.GRID_SIZE / 2;
       
-      if (currentCoasterPieces.length > 0) {
-          const last = currentCoasterPieces[currentCoasterPieces.length - 1];
-          // simple logic: move in direction of last rotation
-          const rad = (last.rotation * Math.PI) / 180;
-          nx = last.x + Math.round(Math.sin(rad)) * 2;
-          nz = last.z + Math.round(Math.cos(rad)) * 2;
+      // If it's the very first piece, we add a "start" piece at center first
+      if (currentCoasterPieces.length === 0) {
+          if (deductMoney(50)) {
+              addCoasterPiece({
+                  x: nx, z: nz, type: 'straight', rotation: rotation, slopeAngle: 0
+              });
+          } else return;
       }
+
+      // Re-calculate last to account for potential new start piece
+      const last = currentCoasterPieces[currentCoasterPieces.length - 1] || { x: nx, z: nz, rotation: rotation };
       
-      if (deductMoney(50)) { // 50 per track piece
+      // Use the CURRENT rotation state to determine direction of the NEW piece
+      const rad = (rotation * Math.PI) / 180;
+      nx = last.x + Math.round(Math.sin(rad)) * 2;
+      nz = last.z + Math.round(Math.cos(rad)) * 2;
+      
+      if (deductMoney(50)) {
           addCoasterPiece({
               x: nx, z: nz, type, rotation, slopeAngle
           });
