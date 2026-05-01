@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { SceneManager } from '../engine/SceneManager';
-import { Tools } from '@babylonjs/core';
+import { Tools } from '@babylonjs/core/Misc/tools.js';
 import { useGameState } from '../store/useGameState';
 import { useParkState } from '../store/useParkState';
 import { FACILITIES } from '../config/facilities';
