@@ -1,4 +1,4 @@
-import { Scene, MeshBuilder, StandardMaterial, Color3, Vector3, TransformNode, Mesh, ShadowGenerator, CSG, Curve3, Path3D, Animation, ParticleSystem, DynamicTexture, Color4 } from '@babylonjs/core';
+import { Scene, MeshBuilder, StandardMaterial, Color3, Vector3, TransformNode, Mesh, ShadowGenerator, CSG, Curve3, Path3D, Animation, ParticleSystem, DynamicTexture, Color4, Quaternion } from '@babylonjs/core';
 import { CONSTANTS } from '../config/constants';
 import { useParkState } from '../store/useParkState';
 import type { PlacedFacility, FacilityDef, CoasterTrackPiece } from '../types';
@@ -439,8 +439,8 @@ export class FacilityManager {
 
                   cars[i].position = pt.add(n.scale(0.6)); // ride slightly above track
 
-                  const target = cars[i].position.add(tng);
-                  cars[i].lookAt(target, 0, 0, 0, undefined, n);
+                  const right = Vector3.Cross(n, tng).normalize();
+                  cars[i].rotationQuaternion = Quaternion.RotationQuaternionFromAxis(right, n, tng);
               }
           });
 

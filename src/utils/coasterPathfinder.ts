@@ -1,4 +1,4 @@
-import type { CoasterTrackPiece, TrackPieceType } from '../types';
+import type { TrackPieceType } from '../types';
 
 interface StateNode {
     x: number;

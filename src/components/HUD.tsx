@@ -5,7 +5,6 @@ import {
   Sun, CloudRain, Cloud, CloudLightning, PartyPopper,
   BarChart2, Beaker, Camera, Save, FolderOpen, Map, Landmark
 } from 'lucide-react';
-import { useParkState } from '../store/useParkState';
 import type { WeatherType } from '../types';
 import { DataDashboard } from './DataDashboard';
 import { ResearchTechTree } from './ResearchTechTree';
