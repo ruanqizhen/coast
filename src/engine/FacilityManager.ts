@@ -302,7 +302,7 @@ export class FacilityManager {
               
               for (let i = 0; i <= pointsInLoop; i++) {
                   const angle = (i / pointsInLoop) * Math.PI * 2;
-                  const zArc = -Math.sin(angle) * loopRadius; 
+                  const zArc = Math.sin(angle) * loopRadius; 
                   const yArc = (1 - Math.cos(angle)) * loopRadius;
                   
                   trackPoints.push(new Vector3(
