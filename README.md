@@ -3,6 +3,10 @@
 > 一个运行在浏览器里的 3D 主题公园模拟经营游戏
 > **Build → Attract → Optimize → Expand**
 
+
+![](image.png)
+
+
 ---
 
 ## 🎮 项目简介
