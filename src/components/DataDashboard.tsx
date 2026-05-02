@@ -7,19 +7,21 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
   BarChart, Bar, ResponsiveContainer, Cell
 } from 'recharts';
-import { X, TrendingUp, BarChart2, Gauge } from 'lucide-react';
+import { X, TrendingUp, BarChart2, Gauge, PieChart } from 'lucide-react';
+import { CONSTANTS } from '../config/constants';
 
 interface Props {
   onClose: () => void;
 }
 
-type TabId = 'trend' | 'breakdown' | 'gauges';
+type TabId = 'trend' | 'breakdown' | 'gauges' | 'expenses';
 
 const COLORS = ['#44BBA4', '#2E86AB', '#F4A223', '#E84855', '#E040FB', '#FF8A65', '#7B61FF', '#4DB8FF'];
 
 export function DataDashboard({ onClose }: Props) {
-  const { historicalData, currentMonthRevenue, currentMonthExpenses, rating, visitorsCount } = useGameState();
+  const { historicalData, currentMonthRevenue, currentMonthExpenses, rating, visitorsCount, loan, monthlyResearchBudget } = useGameState();
   const facilities = useParkState(state => state.facilities);
+  const staff = useParkState(state => state.staff);
 
   const [activeTab, setActiveTab] = useState<TabId>('trend');
 
@@ -43,6 +45,32 @@ export function DataDashboard({ onClose }: Props) {
     return Object.values(buckets).sort((a, b) => b.totalRides - a.totalRides);
   }, [facilities]);
 
+  // Expense breakdown
+  const expenseData = React.useMemo(() => {
+    const staffCounts: Record<string, number> = {};
+    for (const s of Object.values(staff)) {
+      staffCounts[s.type] = (staffCounts[s.type] || 0) + 1;
+    }
+    let staffSalaries = 0;
+    for (const [type, count] of Object.entries(staffCounts)) {
+      staffSalaries += (CONSTANTS.STAFF_SALARY[type] || 0) * count;
+    }
+    let maintenanceCost = 0;
+    for (const fac of facilities) {
+      const def = FACILITIES[fac.typeId];
+      if (def) maintenanceCost += def.monthlyUpkeep;
+    }
+    const loanInterest = loan.principal * loan.monthlyRate;
+    const researchCost = monthlyResearchBudget;
+
+    return [
+      { name: '设施维护', value: maintenanceCost, color: '#E84855' },
+      { name: '员工工资', value: -staffSalaries, color: '#2E86AB' },
+      { name: '贷款利息', value: -loanInterest, color: '#F4A223' },
+      { name: '研发投入', value: -researchCost, color: '#E040FB' },
+    ];
+  }, [facilities, staff, loan, monthlyResearchBudget]);
+
   // Gauge data
   const netProfit = currentMonthRevenue - currentMonthExpenses;
   const facilityCount = facilities.length;
@@ -52,6 +80,7 @@ export function DataDashboard({ onClose }: Props) {
   const tabs: { id: TabId; label: string; icon: React.ReactNode }[] = [
     { id: 'trend', label: '趋势', icon: <TrendingUp size={14} /> },
     { id: 'breakdown', label: '设施', icon: <BarChart2 size={14} /> },
+    { id: 'expenses', label: '支出', icon: <PieChart size={14} /> },
     { id: 'gauges', label: '仪表', icon: <Gauge size={14} /> },
   ];
 
@@ -130,6 +159,41 @@ export function DataDashboard({ onClose }: Props) {
               ) : (
                 <div style={{ textAlign: 'center', paddingTop: 80, color: '#666' }}>暂无设施数据</div>
               )}
+            </div>
+          )}
+
+          {activeTab === 'expenses' && (
+            <div style={{ width: '100%', height: 300 }}>
+              {expenseData.some(d => Math.abs(d.value) > 0) ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={expenseData} margin={{ top: 10, right: 30, left: 10, bottom: 5 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" vertical={false} />
+                    <XAxis dataKey="name" stroke="#888" fontSize={12} />
+                    <YAxis stroke="#888" tickFormatter={(v) => `$${Math.abs(v)}`} />
+                    <Tooltip
+                      contentStyle={{ background: 'var(--panel-bg)', border: 'none', borderRadius: 8, color: '#fff' }}
+                      formatter={(value: number) => [`$${Math.abs(value).toLocaleString()}`, '']}
+                    />
+                    <Bar dataKey="value" name="金额" radius={[4, 4, 0, 0]}>
+                      {expenseData.map((d, i) => (
+                        <Cell key={i} fill={d.color} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : (
+                <div style={{ textAlign: 'center', paddingTop: 80, color: '#666' }}>暂无支出数据</div>
+              )}
+              <div style={{ display: 'flex', gap: 16, borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: 12, marginTop: 8 }}>
+                {expenseData.map((d, i) => (
+                  <div key={i} style={{ flex: 1, textAlign: 'center' }}>
+                    <div style={{ fontSize: 12, color: '#888' }}>{d.name}</div>
+                    <div style={{ fontSize: 18, fontWeight: 700, color: d.color }}>
+                      ${Math.abs(d.value).toLocaleString()}
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 

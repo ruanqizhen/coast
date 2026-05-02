@@ -75,6 +75,7 @@ export interface PlacedFacility {
   ticketPrice: number;      // Player-set price for this facility
   lastRepairDay: number;    // Day of last repair
   builtOnDay: number;       // Day facility was built (for refund calc)
+  durability: number;       // 0–100, decreases with vandalism, 0 = breakdown
   trackPieces?: CoasterTrackPiece[];
 }
 

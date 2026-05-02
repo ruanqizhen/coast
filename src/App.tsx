@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef, useCallback, useState } from 'react';
 import { HUD } from './components/HUD';
 import { BuildBar } from './components/BuildBar';
 import { CoasterEditor } from './components/CoasterEditor';
@@ -9,8 +9,10 @@ import { MessageFeed } from './components/MessageFeed';
 import { MiniMap } from './components/MiniMap';
 import { FacilityInfoCard } from './components/FacilityInfoCard';
 import { VisitorInfoCard } from './components/VisitorInfoCard';
+import { TutorialOverlay } from './components/TutorialOverlay';
 import { saveManager } from './engine/SaveSystem';
 import { CONSTANTS } from './config/constants';
+import { buildWeightGrid } from './engine/PathfindingSystem';
 import type { PlacedFacility, SaveData } from './types';
 
 export function App() {
@@ -21,6 +23,9 @@ export function App() {
   const selectedFacilityId = useParkState(state => state.selectedFacilityId);
   const selectedVisitorId = useParkState(state => state.selectedVisitorId);
   const isSaving = useGameState(state => state.isSaving);
+  const [showTutorial, setShowTutorial] = useState(() => {
+    try { return localStorage.getItem('coast_tutorial_done') !== 'true'; } catch { return true; }
+  });
 
   // ═══════════════════════════════════
   // Auto-save every 5 minutes (PRD §8.6)
@@ -75,6 +80,8 @@ export function App() {
       
       if (type === 'DAY_TICK') {
         gState.advanceDay();
+        // Day/night cycle: dispatch day tick for light rotation
+        window.dispatchEvent(new CustomEvent('onDayTick'));
       } else if (type === 'SIM_UPDATE') {
         pState.setVisitors(payload.visitors);
         pState.setStaff(payload.staff);
@@ -82,12 +89,21 @@ export function App() {
         gState.setVisitorsCount(Object.keys(payload.visitors).length);
       } else if (type === 'WEATHER_UPDATE') {
         gState.setWeather(payload.current, payload.next);
+        // Rain sounds
+        if (payload.current === 'light_rain') {
+          window.dispatchEvent(new CustomEvent('onRainStart', { detail: { heavy: false } }));
+        } else if (payload.current === 'heavy_rain') {
+          window.dispatchEvent(new CustomEvent('onRainStart', { detail: { heavy: true } }));
+        } else {
+          window.dispatchEvent(new CustomEvent('onRainStop'));
+        }
       } else if (type === 'RATING_UPDATE') {
         gState.setRating(payload);
       } else if (type === 'ECONOMY_UPDATE') {
         gState.addMoney(payload.amount);
       } else if (type === 'FACILITY_BREAKDOWN') {
          window.dispatchEvent(new CustomEvent('onFacilityUpdate', { detail: { id: payload, breakdown: true }}));
+         window.dispatchEvent(new CustomEvent('onBreakdownAlarm'));
       } else if (type === 'FACILITY_FIXED') {
          window.dispatchEvent(new CustomEvent('onFacilityUpdate', { detail: { id: payload, breakdown: false }}));
       } else if (type === 'MESSAGE') {
@@ -96,6 +112,17 @@ export function App() {
          gState.setStars(payload);
       } else if (type === 'LOAN_UPDATE') {
          gState.setLoan(payload);
+      } else if (type === 'CONGESTION_UPDATE') {
+        const roads = useParkState.getState().roads;
+        const gridSize = useGameState.getState().gridSize;
+        const flatGrid: (string | null)[][] = Array.from({ length: gridSize }, () => Array(gridSize).fill(null));
+        for (const r of roads) {
+          if (r.x >= 0 && r.z >= 0 && r.x < gridSize && r.z < gridSize) {
+            flatGrid[r.x][r.z] = r.type;
+          }
+        }
+        const wg = buildWeightGrid(flatGrid, false, payload);
+        workerRef.current?.postMessage({ type: 'SYNC_WEIGHT_GRID', payload: wg });
       }
     };
 
@@ -134,6 +161,7 @@ export function App() {
          const cost = roadType === 'normal' ? 5 : roadType === 'wide' ? 9 : 3;
          if (deductMoney(cost)) {
              addRoad({ x, z, type: roadType });
+             window.dispatchEvent(new CustomEvent('onPlayPlaceSound'));
              // Sync road grid to worker
              const roads = useParkState.getState().roads;
              const gridSize = useGameState.getState().gridSize;
@@ -170,7 +198,8 @@ export function App() {
          const facilityRecord: PlacedFacility = {
            instanceId, typeId, x, z, rotation,
            age: 0, breakdown: false, trackPieces,
-           totalRides: 0, ticketPrice: 0, lastRepairDay: 0, builtOnDay: 0
+           totalRides: 0, ticketPrice: 0, lastRepairDay: 0, builtOnDay: 0,
+           durability: 100
          };
          addFacility(facilityRecord);
      }
@@ -302,6 +331,9 @@ export function App() {
       {/* Info cards */}
       {selectedFacilityId && <FacilityInfoCard />}
       {selectedVisitorId && <VisitorInfoCard />}
+
+      {/* Tutorial overlay */}
+      {showTutorial && <TutorialOverlay onClose={() => setShowTutorial(false)} />}
 
       {/* Auto-save indicator */}
       {isSaving && (

@@ -49,6 +49,12 @@ let satEnvironment = 50;
 // Scenery maintenance state
 let sceneryMaintenance: Record<string, number> = {}; // instanceId -> maintenance level (0-100)
 
+// Vandalism tracking: timestamp when incident started
+let vandalismIncidents: Record<string, { startedAt: number; pos: { x: number; z: number }; securityAssigned: boolean }> = {};
+
+// Road congestion: count visitors per grid cell
+let congestionMap: Record<string, number> = {};
+
 // ═══════════════════════════════════
 // Message Handler
 // ═══════════════════════════════════
@@ -241,6 +247,9 @@ function createVisitor() {
     self.postMessage({ type: 'ECONOMY_UPDATE', payload: { type: 'INCOME', amount: ticketPrice, reason: 'ticket' } });
   }
 
+  // Holiday spending boost (PRD §5.6)
+  const spendingWillingness = (0.5 + Math.random()) * (weather === 'holiday' ? 1.3 : 1.0);
+
   visitors[vId] = {
     id: vId,
     pos: { x: entranceX, z: entranceZ },
@@ -254,7 +263,7 @@ function createVisitor() {
     excitementPref: 1 + Math.floor(Math.random() * 10),
     nauseaTolerance: 1 + Math.floor(Math.random() * 10),
     patience: CONSTANTS.VISITOR_DEFAULT_PATIENCE_MIN + Math.random() * (CONSTANTS.VISITOR_DEFAULT_PATIENCE_MAX - CONSTANTS.VISITOR_DEFAULT_PATIENCE_MIN),
-    spendingWillingness: 0.5 + Math.random(),
+    spendingWillingness,
     path: [],
     pathIndex: 0,
     queueStartTime: 0,
@@ -523,6 +532,8 @@ function simulateFrame() {
   const dt = 0.1 / currentSpeed; // seconds per sim frame
   simulateVisitors(dt);
   simulateStaff(dt);
+  checkVandalismConsequences();
+  updateCongestionMap();
 }
 
 // ═══════════════════════════════════
@@ -967,8 +978,14 @@ function arriveAtTarget(v: Visitor) {
       v.ridesCount++;
       currentFac.totalRides++;
 
-      // Ride duration
-      const duration = def.rideDuration || 15000;
+      // Ride duration: use track length for coasters, default for others
+      let duration: number;
+      if (currentFac.trackPieces && currentFac.trackPieces.length > 0) {
+        // Track length × 2 seconds, clamped to 30s–300s (PRD §5.1.5)
+        duration = Math.min(300000, Math.max(30000, currentFac.trackPieces.length * 2000));
+      } else {
+        duration = def.rideDuration || 15000;
+      }
       setTimeout(() => {
         if (visitors[v.id]) {
           visitors[v.id].state = 'idle';
@@ -1147,11 +1164,17 @@ function findStaffWork(s: Staff, now: number) {
       const vandalChance = crowding * 0.01 * (teens / (vInZone.length || 1));
 
       if (Math.random() < vandalChance) {
-        // Find nearest teen
         if (teens > 0) {
           const teen = vInZone.find(v => v.ageGroup === 'teen')!;
           s.targetPos = { ...teen.pos };
           s.targetInstanceId = teen.id;
+          // Track this incident
+          const incId = `vandal_${now}`;
+          vandalismIncidents[incId] = {
+            startedAt: now,
+            pos: { ...teen.pos },
+            securityAssigned: true
+          };
           return;
         }
       }
@@ -1214,7 +1237,16 @@ function handleStaffArrival(s: Staff) {
       break;
 
     case 'security':
-      // Prevent vandalism — deter nearby teens
+      // Resolve active vandalism incidents near this position
+      for (const incId in vandalismIncidents) {
+        const inc = vandalismIncidents[incId];
+        const dx = inc.pos.x - s.pos.x;
+        const dz = inc.pos.z - s.pos.z;
+        if (dx * dx + dz * dz < 100) {
+          delete vandalismIncidents[incId];
+        }
+      }
+      // Deter nearby teens
       const nearby = Object.values(visitors).filter(v => {
         const dx = v.pos.x - s.pos.x;
         const dz = v.pos.z - s.pos.z;
@@ -1224,5 +1256,64 @@ function handleStaffArrival(s: Staff) {
         v.satisfaction -= 2; // Deterrent effect
       }
       break;
+  }
+}
+
+// ═══════════════════════════════════
+// Vandalism Consequences (PRD §5.4.3)
+// ═══════════════════════════════════
+function checkVandalismConsequences() {
+  const now = Date.now();
+  for (const incId in vandalismIncidents) {
+    const inc = vandalismIncidents[incId];
+    // If unresolved for > 30 seconds, apply facility durability damage
+    if (now - inc.startedAt > 30000) {
+      // Find nearest facility in range
+      let nearestFac: PlacedFacility | null = null;
+      let nearestDist = Infinity;
+      for (const fac of facilities) {
+        const fx = fac.x * CONSTANTS.CELL_SIZE + FACILITIES[fac.typeId]!.sizeX * CONSTANTS.CELL_SIZE / 2;
+        const fz = fac.z * CONSTANTS.CELL_SIZE + FACILITIES[fac.typeId]!.sizeZ * CONSTANTS.CELL_SIZE / 2;
+        const dx = inc.pos.x - fx;
+        const dz = inc.pos.z - fz;
+        const dist = dx * dx + dz * dz;
+        if (dist < nearestDist) {
+          nearestDist = dist;
+          nearestFac = fac;
+        }
+      }
+      if (nearestFac && nearestDist < 40000) { // Within ~200 units
+        (nearestFac as any).durability = Math.max(0, (nearestFac.durability ?? 100) - 10);
+        if (nearestFac.durability <= 0 && !nearestFac.breakdown) {
+          nearestFac.breakdown = true;
+          self.postMessage({ type: 'FACILITY_BREAKDOWN', payload: nearestFac.instanceId });
+          self.postMessage({ type: 'MESSAGE', payload: {
+            id: `msg_${Date.now()}`,
+            text: `🚨 ${FACILITIES[nearestFac.typeId]?.name || '设施'} 被破坏严重，已停止运营！`,
+            priority: 'critical', timestamp: Date.now(),
+            targetId: nearestFac.instanceId,
+            targetPos: { x: nearestFac.x * CONSTANTS.CELL_SIZE, z: nearestFac.z * CONSTANTS.CELL_SIZE }
+          }});
+        }
+      }
+      delete vandalismIncidents[incId];
+    }
+  }
+}
+
+// ═══════════════════════════════════
+// Road Congestion (PRD §5.1.4)
+// ═══════════════════════════════════
+function updateCongestionMap() {
+  congestionMap = {};
+  for (const v of Object.values(visitors)) {
+    const gx = Math.floor(v.pos.x / CONSTANTS.CELL_SIZE);
+    const gz = Math.floor(v.pos.z / CONSTANTS.CELL_SIZE);
+    const key = `${gx},${gz}`;
+    congestionMap[key] = (congestionMap[key] || 0) + 1;
+  }
+  // Rebuild weight grid with congestion data every ~2 seconds
+  if (Date.now() % 2000 < 100) {
+    weightGrid = buildWeightGrid(roadGrid, false, congestionMap);
   }
 }

@@ -46,10 +46,14 @@ export function BabylonCanvas() {
           totalRides: 0,
           ticketPrice: 0,
           lastRepairDay: 0,
-          builtOnDay: 0
+          builtOnDay: 0,
+          durability: 100
         };
         addFacility(facilityRecord);
         exitPlacementMode();
+        window.dispatchEvent(new CustomEvent('onPlayPlaceSound'));
+      } else {
+        window.dispatchEvent(new CustomEvent('onPlayErrorSound'));
       }
     };
 
@@ -59,12 +63,50 @@ export function BabylonCanvas() {
        }
     };
 
+    // Wire audio to global events
+    const handlePlayUIClick = () => managerRef.current?.soundManager.playUIClick();
+    const handlePlayPlace = () => managerRef.current?.soundManager.playPlace();
+    const handlePlayDemolish = () => managerRef.current?.soundManager.playDemolish();
+    const handlePlayError = () => managerRef.current?.soundManager.playError();
+    const handleBreakdownAlarm = () => managerRef.current?.soundManager.playBreakdownAlarm();
+    const handleRainStart = (e: Event) => managerRef.current?.soundManager.startRainSound((e as CustomEvent).detail?.heavy);
+    const handleRainStop = () => managerRef.current?.soundManager.stopRainSound();
+    const handleBGMStart = () => managerRef.current?.soundManager.startBGM();
+    const handleBGMStop = () => managerRef.current?.soundManager.stopBGM();
+    const handleSetAudioEnabled = (e: Event) => managerRef.current?.soundManager.setEnabled((e as CustomEvent).detail);
+
     window.addEventListener('onFacilityPlaced', handlePlacement);
     window.addEventListener('onTakeScreenshot', handleScreenshot);
+    window.addEventListener('onPlayUIClick', handlePlayUIClick);
+    window.addEventListener('onPlayPlaceSound', handlePlayPlace);
+    window.addEventListener('onPlayDemolishSound', handlePlayDemolish);
+    window.addEventListener('onPlayErrorSound', handlePlayError);
+    window.addEventListener('onBreakdownAlarm', handleBreakdownAlarm);
+    window.addEventListener('onRainStart', handleRainStart);
+    window.addEventListener('onRainStop', handleRainStop);
+    window.addEventListener('onBGMStart', handleBGMStart);
+    window.addEventListener('onBGMStop', handleBGMStop);
+    const handleSetSFXVolume = (e: Event) => managerRef.current?.soundManager.setSFXVolume((e as CustomEvent).detail);
+    const handleSetBGMVolume = (e: Event) => managerRef.current?.soundManager.setBGMVolume((e as CustomEvent).detail);
+    window.addEventListener('onSetAudioEnabled', handleSetAudioEnabled);
+    window.addEventListener('onSetSFXVolume', handleSetSFXVolume);
+    window.addEventListener('onSetBGMVolume', handleSetBGMVolume);
 
     return () => {
       window.removeEventListener('onFacilityPlaced', handlePlacement);
       window.removeEventListener('onTakeScreenshot', handleScreenshot);
+      window.removeEventListener('onPlayUIClick', handlePlayUIClick);
+      window.removeEventListener('onPlayPlaceSound', handlePlayPlace);
+      window.removeEventListener('onPlayDemolishSound', handlePlayDemolish);
+      window.removeEventListener('onPlayErrorSound', handlePlayError);
+      window.removeEventListener('onBreakdownAlarm', handleBreakdownAlarm);
+      window.removeEventListener('onRainStart', handleRainStart);
+      window.removeEventListener('onRainStop', handleRainStop);
+      window.removeEventListener('onBGMStart', handleBGMStart);
+      window.removeEventListener('onBGMStop', handleBGMStop);
+      window.removeEventListener('onSetAudioEnabled', handleSetAudioEnabled);
+      window.removeEventListener('onSetSFXVolume', handleSetSFXVolume);
+      window.removeEventListener('onSetBGMVolume', handleSetBGMVolume);
       managerRef.current?.dispose();
       managerRef.current = null;
     };

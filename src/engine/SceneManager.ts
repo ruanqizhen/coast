@@ -4,6 +4,8 @@ import { GridManager } from './GridManager';
 import { FacilityManager } from './FacilityManager';
 import { EntityManager } from './EntityManager';
 import { RoadRenderer } from './RoadRenderer';
+import { SoundManager } from './SoundManager';
+import { LODManager } from './LODManager';
 import { useParkState } from '../store/useParkState';
 
 export class SceneManager {
@@ -17,6 +19,11 @@ export class SceneManager {
   public facilityManager: FacilityManager;
   public entityManager: EntityManager;
   public roadRenderer: RoadRenderer;
+  public soundManager: SoundManager;
+  public lodManager: LODManager;
+  public sunLight: DirectionalLight;
+  private _currentSimSpeed: number = 1;
+  private updateDayNight: () => void = () => {};
 
   constructor(canvas: HTMLCanvasElement) {
     this._canvas = canvas;
@@ -54,6 +61,7 @@ export class SceneManager {
     const sun = new DirectionalLight('sun', new Vector3(-1, -2, -1), this.scene);
     sun.intensity = 0.5;
     sun.position = new Vector3(100, 200, 100);
+    this.sunLight = sun;
 
     // Shadows
     this.shadowGenerator = new ShadowGenerator(2048, sun);
@@ -70,16 +78,71 @@ export class SceneManager {
     // Subsystems
     this.gridManager = new GridManager(this.scene);
     this.facilityManager = new FacilityManager(this.scene, this.shadowGenerator);
-    this.entityManager = new EntityManager(this.scene);
+    this.entityManager = new EntityManager(this.scene, this.lodManager);
     this.roadRenderer = new RoadRenderer(this.scene);
+    this.soundManager = new SoundManager(this.scene);
+    this.lodManager = new LODManager(this.scene, this.camera);
 
     // Render loop
     this._engine.runRenderLoop(() => {
+      this.updateDayNight();
       this.scene.render();
     });
 
     window.addEventListener('resize', () => {
       this._engine.resize();
+    });
+
+    // ── Day/Night Cycle ──
+    let dayFraction = 0.5; // Start at noon
+    const DAY_DURATION_MS = 60000; // 60s per game day
+    const DAY_NIGHT_TRANSITION = 0.1; // 10% of day = dawn/dusk
+
+    const updateDayTick = () => {
+      // Advance by a tiny fraction each real frame (~16ms at 60fps)
+      // Each real second = 1/60 of a game day at 1× speed
+      const speed = 1; // default, will be overridden by day tick events
+      dayFraction = (dayFraction + (16 / DAY_DURATION_MS) * speed) % 1;
+    };
+
+    // Use scene render observer for smooth interpolation
+    let lastFrameTime = performance.now();
+    this.scene.onBeforeRenderObservable.add(() => {
+      const now = performance.now();
+      const dtMs = now - lastFrameTime;
+      lastFrameTime = now;
+      const speed = this._currentSimSpeed;
+      dayFraction = (dayFraction + (dtMs / DAY_DURATION_MS) * speed) % 1;
+    });
+
+    this.updateDayNight = () => {
+      const t = dayFraction;
+      // Sun: rises in east (morning), sets in west (evening)
+      // Map t=0 (midnight) → angle=-90°, t=0.25 (dawn) → angle=0°, t=0.5 (noon) → angle=90°, t=0.75 (dusk) → angle=180°
+      const sunAngle = (t - 0.25) * Math.PI * 2;
+      const sunHeight = Math.sin(t * Math.PI * 2);
+      const sunRadius = 250;
+      this.sunLight.position = new Vector3(
+        Math.cos(sunAngle) * sunRadius,
+        Math.max(10, sunHeight * sunRadius),
+        Math.sin(sunAngle) * sunRadius * 0.5
+      );
+
+      // Intensity: peak at noon, dim at night
+      const nightFactor = Math.max(0, Math.sin(t * Math.PI));
+      this.sunLight.intensity = 0.1 + nightFactor * 0.5;
+      this.scene.clearColor = new Color4(
+        0.05 + nightFactor * 0.48,
+        0.05 + nightFactor * 0.76,
+        0.1 + nightFactor * 0.88,
+        1.0
+      );
+    };
+
+    // Listen for speed changes
+    const self = this;
+    window.addEventListener('onSpeedChange', (e: Event) => {
+      self._currentSimSpeed = (e as CustomEvent).detail;
     });
 
     // ── 3D Picking Logic ──
@@ -123,6 +186,7 @@ export class SceneManager {
   }
 
   public dispose() {
+    this.soundManager.dispose();
     this._engine.dispose();
   }
 }

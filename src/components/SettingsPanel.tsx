@@ -1,8 +1,9 @@
 import { createPortal } from 'react-dom';
+import { useState } from 'react';
 import { useGameState } from '../store/useGameState';
 import { useParkState } from '../store/useParkState';
 import { FACILITIES, DEFAULT_TICKET_PRICES } from '../config/facilities';
-import { X, Settings } from 'lucide-react';
+import { X, Settings, Volume2, VolumeX } from 'lucide-react';
 
 interface Props {
   onClose: () => void;
@@ -11,6 +12,35 @@ interface Props {
 export function SettingsPanel({ onClose }: Props) {
   const { ticketMode, ticketPrice, setTicketMode, setTicketPrice } = useGameState();
   const { facilities, updateFacility } = useParkState();
+
+  const [audioEnabled, setAudioEnabled] = useState(() => {
+    try { return localStorage.getItem('coast_audio_enabled') !== 'false'; } catch { return true; }
+  });
+  const [sfxVolume, setSfxVolume] = useState(() => {
+    try { return Number(localStorage.getItem('coast_sfx_volume') ?? 0.7); } catch { return 0.7; }
+  });
+  const [bgmVolume, setBgmVolume] = useState(() => {
+    try { return Number(localStorage.getItem('coast_bgm_volume') ?? 0.15); } catch { return 0.15; }
+  });
+
+  const toggleAudio = () => {
+    const next = !audioEnabled;
+    setAudioEnabled(next);
+    try { localStorage.setItem('coast_audio_enabled', String(next)); } catch {}
+    window.dispatchEvent(new CustomEvent('onSetAudioEnabled', { detail: next }));
+  };
+
+  const updateSfxVolume = (v: number) => {
+    setSfxVolume(v);
+    try { localStorage.setItem('coast_sfx_volume', String(v)); } catch {}
+    window.dispatchEvent(new CustomEvent('onSetSFXVolume', { detail: v }));
+  };
+
+  const updateBgmVolume = (v: number) => {
+    setBgmVolume(v);
+    try { localStorage.setItem('coast_bgm_volume', String(v)); } catch {}
+    window.dispatchEvent(new CustomEvent('onSetBGMVolume', { detail: v }));
+  };
 
   // Filter facilities that can have prices
   const pricableFacilities = facilities.filter(f => {
@@ -76,6 +106,44 @@ export function SettingsPanel({ onClose }: Props) {
                         </div>
                      </div>
                   </div>
+                )}
+             </div>
+          </section>
+
+          {/* Audio Settings */}
+          <section>
+             <h3 style={{ fontSize: 16, margin: '0 0 12px 0', borderLeft: '4px solid #E040FB', paddingLeft: 10 }}>音频设置</h3>
+             <div style={{ background: 'rgba(255,255,255,0.05)', padding: 16, borderRadius: 12, display: 'flex', flexDirection: 'column', gap: 16 }}>
+                <button onClick={toggleAudio} style={{
+                   padding: '12px 20px', borderRadius: 8, border: 'none',
+                   background: audioEnabled ? '#44BBA4' : '#E84855',
+                   color: '#111', fontWeight: 600, cursor: 'pointer',
+                   display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'center', width: 'fit-content'
+                }}>
+                   {audioEnabled ? <Volume2 size={18} /> : <VolumeX size={18} />}
+                   {audioEnabled ? '音效已开启' : '音效已关闭'}
+                </button>
+                {audioEnabled && (
+                  <>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                       <span style={{ minWidth: 70, fontSize: 13, color: '#aaa' }}>音效音量</span>
+                       <input type="range" min="0" max="100" step="5"
+                         value={Math.round(sfxVolume * 100)}
+                         onChange={(e) => updateSfxVolume(Number(e.target.value) / 100)}
+                         style={{ flex: 1, accentColor: '#44BBA4' }}
+                       />
+                       <span style={{ minWidth: 35, fontSize: 13, color: '#44BBA4' }}>{Math.round(sfxVolume * 100)}%</span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                       <span style={{ minWidth: 70, fontSize: 13, color: '#aaa' }}>音乐音量</span>
+                       <input type="range" min="0" max="100" step="5"
+                         value={Math.round(bgmVolume * 100)}
+                         onChange={(e) => updateBgmVolume(Number(e.target.value) / 100)}
+                         style={{ flex: 1, accentColor: '#E040FB' }}
+                       />
+                       <span style={{ minWidth: 35, fontSize: 13, color: '#E040FB' }}>{Math.round(bgmVolume * 100)}%</span>
+                    </div>
+                  </>
                 )}
              </div>
           </section>
