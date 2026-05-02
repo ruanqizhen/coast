@@ -83,7 +83,7 @@ export class SceneManager {
     });
 
     // ── 3D Picking Logic ──
-    this.scene.onPointerDown = (evt, pickResult) => {
+    this.scene.onPointerDown = (_evt, pickResult) => {
         // Only pick if not in placement mode
         const pState = useParkState.getState();
         if (pState.placementMode || pState.coasterBuilderMode) return;

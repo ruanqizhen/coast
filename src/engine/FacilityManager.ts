@@ -502,7 +502,7 @@ export class FacilityManager {
       if (isPreview) {
           parent.getChildMeshes().forEach(m => {
               m.actionManager = new ActionManager(this.scene);
-              m.cursor = 'move';
+              (m as any).hoverCursor = 'move';
           });
       }
 

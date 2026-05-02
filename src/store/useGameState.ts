@@ -70,7 +70,7 @@ interface GameState {
   applyMonthSettlement: (data: { revenue: number; expenses: number; satisfaction: number; visitorPeak: number }) => void;
 }
 
-const IS_DEBUG = true;
+const IS_DEBUG = false;
 
 export const useGameState = create<GameState>((set, get) => ({
   money: IS_DEBUG ? 100000 : CONSTANTS.STARTING_MONEY,

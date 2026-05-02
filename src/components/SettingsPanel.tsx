@@ -1,9 +1,8 @@
-import React from 'react';
 import { createPortal } from 'react-dom';
 import { useGameState } from '../store/useGameState';
 import { useParkState } from '../store/useParkState';
 import { FACILITIES, DEFAULT_TICKET_PRICES } from '../config/facilities';
-import { X, Settings, DollarSign, Tag, Info } from 'lucide-react';
+import { X, Settings } from 'lucide-react';
 
 interface Props {
   onClose: () => void;

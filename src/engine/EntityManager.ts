@@ -1,6 +1,6 @@
 import { Scene, MeshBuilder, StandardMaterial, Color3, Vector3, Mesh, TransformNode } from '@babylonjs/core';
 import { useParkState } from '../store/useParkState';
-import type { Visitor, Staff, VomitPoint } from '../types';
+import type { Visitor, Staff, VomitPoint, StaffType } from '../types';
 
 // Predefined clothing palettes for randomized visitor variety
 const SHIRT_COLORS = [

@@ -218,7 +218,7 @@ export interface GameMessage {
 // ──────────────────────────────────
 // Coaster Track (Phase 3)
 // ──────────────────────────────────
-export type TrackPieceType = 'straight' | 'climb' | 'dive' | 'loop' | 'mega_loop' | 'vertical_climb';
+export type TrackPieceType = 'straight' | 'climb' | 'dive' | 'loop' | 'mega_loop' | 'vertical_climb' | 'vertical_dive';
 
 export interface CoasterTrackPiece {
   x: number;
@@ -228,7 +228,6 @@ export interface CoasterTrackPiece {
   slopeAngle?: number;     // Manual slope adjustment, step 5°
 }
 
-// Track piece stat bonuses (from PRD)
 export const TRACK_PIECE_STATS: Record<TrackPieceType, { excitement: number; nausea: number; breakdownBonus: number }> = {
   straight:       { excitement: 0,   nausea: 0,   breakdownBonus: 0 },
   climb:          { excitement: 0.5, nausea: 0.2, breakdownBonus: 0.001 },
@@ -236,6 +235,7 @@ export const TRACK_PIECE_STATS: Record<TrackPieceType, { excitement: number; nau
   loop:           { excitement: 2.0, nausea: 1.5, breakdownBonus: 0.008 },
   mega_loop:      { excitement: 3.5, nausea: 2.2, breakdownBonus: 0.012 },
   vertical_climb: { excitement: 2.5, nausea: 1.2, breakdownBonus: 0.010 },
+  vertical_dive:  { excitement: 3.0, nausea: 1.5, breakdownBonus: 0.012 },
 };
 
 // ──────────────────────────────────

@@ -322,7 +322,15 @@ function checkBreakdowns() {
     // Track complexity bonus for coasters
     if (fac.trackPieces) {
       for (const piece of fac.trackPieces) {
-        const stats = { straight: 0, climb: 0.001, dive: 0.003, loop: 0.008, super_loop: 0.015 };
+        const stats: Record<string, number> = { 
+            straight: 0, 
+            climb: 0.001, 
+            dive: 0.003, 
+            loop: 0.008, 
+            mega_loop: 0.012, 
+            vertical_climb: 0.010, 
+            vertical_dive: 0.012 
+        };
         breakdownChance += stats[piece.type] || 0;
       }
     }

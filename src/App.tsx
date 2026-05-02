@@ -15,19 +15,9 @@ import type { PlacedFacility, SaveData } from './types';
 
 export function App() {
   const workerRef = useRef<Worker | null>(null);
-  
-  const advanceDay = useGameState(state => state.advanceDay);
   const speed = useGameState(state => state.speed);
   const gamePaused = useGameState(state => state.gamePaused);
-  const addMoney = useGameState(state => state.addMoney);
-  const setWeather = useGameState(state => state.setWeather);
-  const setRating = useGameState(state => state.setRating);
-  const setVisitorsCount = useGameState(state => state.setVisitorsCount);
-
   const facilities = useParkState(state => state.facilities);
-  const setVisitors = useParkState(state => state.setVisitors);
-  const setStaff = useParkState(state => state.setStaff);
-  const setVomitPoints = useParkState(state => state.setVomitPoints);
   const selectedFacilityId = useParkState(state => state.selectedFacilityId);
   const selectedVisitorId = useParkState(state => state.selectedVisitorId);
   const isSaving = useGameState(state => state.isSaving);
