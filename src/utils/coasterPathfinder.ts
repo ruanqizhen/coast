@@ -42,7 +42,7 @@ export function findCoasterClosurePath(
     const getStateKey = (n: StateNode) => `${n.x},${n.z},${n.h},${n.rot}`;
 
     let iterations = 0;
-    const MAX_ITERATIONS = 5000;
+    const MAX_ITERATIONS = 50000;
 
     while (openList.length > 0 && iterations < MAX_ITERATIONS) {
         iterations++;
@@ -89,14 +89,16 @@ export function findCoasterClosurePath(
             const nextX = current.x + Math.round(Math.sin(rRad)) * 2;
             const nextZ = current.z + Math.round(Math.cos(rRad)) * 2;
             
-            const types: TrackPieceType[] = ['straight', 'climb', 'dive']; // Loop is hard to pathfind safely
+            const types: TrackPieceType[] = ['straight', 'climb', 'dive', 'vertical_climb', 'vertical_dive']; 
             
             for (const type of types) {
                 let nextH = current.h;
                 if (type === 'climb') nextH += 1;
                 else if (type === 'dive') nextH -= 1;
+                else if (type === 'vertical_climb') nextH += 4;
+                else if (type === 'vertical_dive') nextH -= 4;
                 
-                if (nextH < 0 || nextH > 10) continue; // Limits
+                if (nextH < 0 || nextH > 50) continue; // Increased height limit to 50 (100m)
 
                 // Penalize turning + climbing/diving at same time to make nicer tracks
                 let turnPenalty = (nextRot !== current.rot) ? 1 : 0;

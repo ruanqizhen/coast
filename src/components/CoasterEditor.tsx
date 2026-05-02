@@ -15,6 +15,15 @@ export function CoasterEditor() {
   const [slopeAngle, setSlopeAngle] = useState(0);
 
   const handleAddPiece = (type: TrackPieceType) => {
+      // Constraint: Basic coaster can only have 1 loop
+      if (selectedFacilityToPlace === 'coaster_basic' && type === 'loop') {
+          const loopCount = currentCoasterPieces.filter(p => p.type === 'loop').length;
+          if (loopCount >= 1) {
+              alert('普通过山车最多只能包含一个回环！请升级为弹射过山车以建造更多回环。');
+              return;
+          }
+      }
+
       let nx = CONSTANTS.GRID_SIZE / 2;
       let nz = CONSTANTS.GRID_SIZE / 2;
       
@@ -35,7 +44,8 @@ export function CoasterEditor() {
       nx = last.x + Math.round(Math.sin(rad)) * 2;
       nz = last.z + Math.round(Math.cos(rad)) * 2;
       
-      if (deductMoney(50)) {
+      const cost = type === 'mega_loop' ? 150 : 50;
+      if (deductMoney(cost)) {
           addCoasterPiece({
               x: nx, z: nz, type, rotation, slopeAngle
           });
@@ -153,8 +163,19 @@ export function CoasterEditor() {
           newPieces.push({ x: lx, z: lz, type: 'straight', rotation: 0, slopeAngle: 0 });
 
           for (let i = 0; i < numRandom; i++) {
-              const types: TrackPieceType[] = ['straight', 'climb', 'dive', 'loop'];
-              const t = types[Math.floor(Math.random() * types.length)];
+              let availableTypes: TrackPieceType[] = selectedFacilityToPlace === 'launch_coaster'
+                ? ['straight', 'climb', 'dive', 'loop', 'mega_loop', 'vertical_climb']
+                : ['straight', 'climb', 'dive', 'loop'];
+              
+              // Enforce 1-loop limit for basic coaster in random build
+              if (selectedFacilityToPlace === 'coaster_basic') {
+                  const currentLoops = newPieces.filter(p => p.type === 'loop').length;
+                  if (currentLoops >= 1) {
+                      availableTypes = availableTypes.filter(t => t !== 'loop');
+                  }
+              }
+              
+              const t = availableTypes[Math.floor(Math.random() * availableTypes.length)];
               const rotChange = (Math.floor(Math.random() * 3) - 1) * 90;
               const nextRot = (lRot + rotChange + 360) % 360;
               const s = (Math.floor(Math.random() * 3) - 1) * 15;
@@ -168,8 +189,9 @@ export function CoasterEditor() {
               let nextH = lH + Math.tan(slopeRad);
               if (t === 'climb') nextH++;
               if (t === 'dive') nextH--;
+              if (t === 'vertical_climb') nextH += 4; // Matches +8m in FacilityManager
               
-              if (nextH < 0) continue; // Safety: Ground check
+              if (nextH < 0 || nextH > 15) continue; // Safety: Ground/Height check
 
               newPieces.push({ x: nx, z: nz, type: t, rotation: nextRot, slopeAngle: s });
               lx = nx; lz = nz; lRot = nextRot; lH = nextH;
@@ -260,6 +282,18 @@ export function CoasterEditor() {
          <button onClick={() => handleAddPiece('loop')} style={{ padding: 12, background: '#2E86AB', borderRadius: 6, display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'center' }}>
              <RefreshCcw size={16} /> 回环 (-$50)
          </button>
+         
+         {/* Exclusive pieces for Launch Coaster */}
+         {selectedFacilityToPlace === 'launch_coaster' && (
+           <>
+            <button onClick={() => handleAddPiece('mega_loop')} style={{ padding: 12, background: '#7B61FF', borderRadius: 6, display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'center' }}>
+                <RefreshCcw size={20} /> 大回环 (-$150)
+            </button>
+            <button onClick={() => handleAddPiece('vertical_climb')} style={{ padding: 12, background: '#7B61FF', borderRadius: 6, display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'center' }}>
+                <TrendingUp size={20} strokeWidth={3} /> 竖直轨道 (-$50)
+            </button>
+           </>
+         )}
       </div>
 
       <button onClick={handleRandomBuild} style={{ width: '100%', padding: '12px', background: 'linear-gradient(135deg, #FF6B6B, #7B61FF)', borderRadius: 8, color: 'white', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'center', border: 'none', cursor: 'pointer', boxShadow: '0 4px 15px rgba(123, 97, 255, 0.3)' }}>

@@ -318,29 +318,49 @@ export class FacilityManager {
               currentHeight += 2;
           } else if (piece.type === 'dive') {
               currentHeight -= 2;
+          } else if (piece.type === 'vertical_climb') {
+              currentHeight += 8; // High vertical change
           }
           
           let px = piece.x * CONSTANTS.CELL_SIZE;
           let pz = piece.z * CONSTANTS.CELL_SIZE;
           
-          if (piece.type === 'loop') {
+          if (piece.type === 'loop' || piece.type === 'mega_loop') {
               const rad = (piece.rotation * Math.PI) / 180;
               const fwdX = Math.sin(rad);
               const fwdZ = Math.cos(rad);
-              const loopRadius = 6;
-              const pointsInLoop = 12;
+              // Calculate "right" vector for lateral offset
+              const sideX = Math.cos(rad);
+              const sideZ = -Math.sin(rad);
+              
+              const isMega = piece.type === 'mega_loop';
+              const loopRadius = isMega ? 12 : 6;
+              const pointsInLoop = isMega ? 32 : 16; 
               
               for (let i = 0; i <= pointsInLoop; i++) {
                   const angle = (i / pointsInLoop) * Math.PI * 2;
                   const zArc = Math.sin(angle) * loopRadius; 
                   const yArc = (1 - Math.cos(angle)) * loopRadius;
                   
+                  const lateralShift = Math.sin(angle / 2) * (isMega ? 3.0 : 1.8); 
+                  
                   trackPoints.push(new Vector3(
-                      px + fwdX * zArc,
+                      px + fwdX * zArc + sideX * lateralShift,
                       currentHeight + yArc,
-                      pz + fwdZ * zArc
+                      pz + fwdZ * zArc + sideZ * lateralShift
                   ));
               }
+          } else if (piece.type === 'vertical_climb') {
+              const prevHeight = currentHeight - 8;
+              const rad = (piece.rotation * Math.PI) / 180;
+              const fwdX = Math.sin(rad) * CONSTANTS.CELL_SIZE;
+              const fwdZ = Math.cos(rad) * CONSTANTS.CELL_SIZE;
+              
+              // Add an intermediate point to make it look "vertical" (S-curve)
+              trackPoints.push(new Vector3(px - fwdX * 0.8, prevHeight + 1, pz - fwdZ * 0.8));
+              trackPoints.push(new Vector3(px - fwdX * 0.5, prevHeight + 4, pz - fwdZ * 0.5));
+              trackPoints.push(new Vector3(px - fwdX * 0.2, prevHeight + 7, pz - fwdZ * 0.2));
+              trackPoints.push(new Vector3(px, currentHeight, pz));
           } else {
              // Calculate bank based on slopeAngle if any (placeholder logic for node mapping)
              // We just add simple positional nodes
@@ -757,6 +777,117 @@ export class FacilityManager {
               bulb.material = bulbMat;
               bulb.parent = parent;
           }
+      } else if (typeId === 'bumper_cars') {
+          // Bumper Cars: Arena with roof, poles, and small cars
+          const floor = MeshBuilder.CreateBox("floor", { width: w, depth: h, height: 0.2 }, this.scene);
+          floor.position.y = 0.1;
+          floor.material = this.getPBR("floorMat", new Color3(0.1, 0.1, 0.1), 0.8, 0.2); // Metallic dark floor
+          floor.parent = parent;
+          this.registerShadows(floor);
+
+          const fenceMat = this.getPBR("fenceMat", new Color3(0.9, 0.8, 0.2), 0.8, 0.3);
+          for (let i = 0; i < 4; i++) {
+              const fence = MeshBuilder.CreateBox("fence", { 
+                  width: i < 2 ? w : 0.2, 
+                  depth: i < 2 ? 0.2 : h, 
+                  height: 0.8 
+              }, this.scene);
+              fence.position.y = 0.5;
+              if (i === 0) fence.position.z = h / 2 - 0.1;
+              if (i === 1) fence.position.z = -h / 2 + 0.1;
+              if (i === 2) fence.position.x = w / 2 - 0.1;
+              if (i === 3) fence.position.x = -w / 2 + 0.1;
+              fence.material = fenceMat;
+              fence.parent = parent;
+          }
+
+          // Roof and Poles
+          const roofH = 4.5;
+          const roof = MeshBuilder.CreateBox("roof", { width: w * 1.05, depth: h * 1.05, height: 0.3 }, this.scene);
+          roof.position.y = roofH;
+          roof.material = this.getPBR("roofMat", new Color3(0.2, 0.4, 0.8), 0.2, 0.8);
+          roof.parent = parent;
+          this.registerShadows(roof);
+
+          const poleMat = this.getPBR("poleMat", new Color3(0.7, 0.7, 0.7), 0.9, 0.2);
+          for (let x of [-w/2.2, w/2.2]) {
+              for (let z of [-h/2.2, h/2.2]) {
+                  const pole = MeshBuilder.CreateCylinder("pole", { diameter: 0.15, height: roofH }, this.scene);
+                  pole.position = new Vector3(x, roofH / 2, z);
+                  pole.material = poleMat;
+                  pole.parent = parent;
+              }
+          }
+
+          // Ceiling grid (netting for power)
+          const grid = MeshBuilder.CreateGround("grid", { width: w, height: h, subdivisions: 4 }, this.scene);
+          grid.position.y = roofH - 0.1;
+          const gridMat = new StandardMaterial("gridMat", this.scene);
+          gridMat.diffuseColor = new Color3(0.2, 0.2, 0.2);
+          gridMat.wireframe = true;
+          grid.material = gridMat;
+          grid.parent = parent;
+
+          // Mini Cars
+          const carColors = [new Color3(0.9, 0.1, 0.1), new Color3(0.1, 0.6, 0.2), new Color3(0.1, 0.3, 0.9)];
+          for (let i = 0; i < 6; i++) {
+              const car = MeshBuilder.CreateBox("bcar", { width: 1.0, depth: 0.7, height: 0.5 }, this.scene);
+              car.position = new Vector3((Math.random()-0.5)*w*0.7, 0.45, (Math.random()-0.5)*h*0.7);
+              car.rotation.y = Math.random() * Math.PI * 2;
+              car.material = this.getPBR("bcMat", carColors[i % 3], 0.8, 0.2);
+              car.parent = parent;
+              this.registerShadows(car);
+              
+              // Antenna
+              const ant = MeshBuilder.CreateCylinder("ant", { diameter: 0.02, height: 4.1 }, this.scene);
+              ant.position.y = 2.05;
+              ant.position.x = -0.3;
+              ant.material = poleMat;
+              ant.parent = car;
+          }
+      } else if (typeId === 'dark_ride') {
+          // Dark Ride: Massive building with themed facade
+          const building = MeshBuilder.CreateBox("building", { width: w, depth: h, height: 6 }, this.scene);
+          building.position.y = 3;
+          building.material = this.getPBR("buildMat", new Color3(0.15, 0.1, 0.2), 0.1, 0.9); // Dark purple/black
+          building.parent = parent;
+          this.registerShadows(building);
+
+          // Themed Entrance Facade
+          const facade = MeshBuilder.CreateBox("facade", { width: w * 0.6, depth: 0.5, height: 4 }, this.scene);
+          facade.position = new Vector3(0, 2, -h / 2);
+          facade.material = this.getPBR("facadeMat", new Color3(0.4, 0.3, 0.5), 0.2, 0.8);
+          facade.parent = parent;
+
+          // Entrance Tunnel Hole (using CSG)
+          const tunnel = MeshBuilder.CreateBox("tunnel", { width: 3, depth: 2, height: 3 }, this.scene);
+          tunnel.position = new Vector3(0, 1.5, -h / 2);
+          
+          const csgBuild = CSG.FromMesh(building);
+          const csgTunnel = CSG.FromMesh(tunnel);
+          const cutBuild = csgBuild.subtract(csgTunnel).toMesh("ride_entry", null, this.scene);
+          cutBuild.material = building.material;
+          cutBuild.parent = parent;
+          building.dispose(); tunnel.dispose();
+
+          // Spires
+          for (let x of [-w/2+0.5, w/2-0.5]) {
+              const spire = MeshBuilder.CreateCylinder("spire", { diameterTop: 0, diameterBottom: 1.5, height: 8 }, this.scene);
+              spire.position = new Vector3(x, 4, -h / 2);
+              spire.material = this.getPBR("spireMat", new Color3(0.1, 0.1, 0.1), 0.5, 0.5);
+              spire.parent = parent;
+              this.registerShadows(spire);
+          }
+
+          // Ghostly light effects (simple spheres with emissive)
+          for (let i = 0; i < 4; i++) {
+              const light = MeshBuilder.CreateSphere("glow", { diameter: 0.4 }, this.scene);
+              light.position = new Vector3((i-1.5)*2, 4.5, -h/2 - 0.2);
+              const lightMat = new StandardMaterial("glowMat", this.scene);
+              lightMat.emissiveColor = new Color3(0.2, 1.0, 0.4);
+              light.material = lightMat;
+              light.parent = parent;
+          }
       } else {
           this.createGenericBox(def, parent, new Color3(0.2, 0.6, 0.9));
       }
@@ -1142,6 +1273,24 @@ export class FacilityManager {
               bush.parent = parent;
               this.registerShadows(bush);
           }
+      } else if (typeId === 'weather_tent') {
+          // Weather Tent: Gazebo style
+          const h = 3.5;
+          const poleMat = this.getPBR("poleMat", new Color3(0.8, 0.8, 0.8), 0.1, 0.8);
+          for (let x of [-w/2.2, w/2.2]) {
+              for (let z of [-w/2.2, w/2.2]) {
+                  const pole = MeshBuilder.CreateCylinder("pole", { diameter: 0.1, height: h }, this.scene);
+                  pole.position = new Vector3(x, h/2, z);
+                  pole.material = poleMat;
+                  pole.parent = parent;
+              }
+          }
+          const cloth = MeshBuilder.CreateCylinder("cloth", { diameterTop: 0, diameterBottom: w*1.1, height: 1.5, tessellation: 4 }, this.scene);
+          cloth.position.y = h + 0.5;
+          cloth.rotation.y = Math.PI / 4;
+          cloth.material = this.getPBR("clothMat", new Color3(0.9, 0.9, 0.9), 0.0, 1.0);
+          cloth.parent = parent;
+          this.registerShadows(cloth);
       } else {
           this.createGenericBox(def, parent, new Color3(0.4, 0.8, 0.4));
       }

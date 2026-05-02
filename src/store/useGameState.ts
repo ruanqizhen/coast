@@ -70,31 +70,32 @@ interface GameState {
   applyMonthSettlement: (data: { revenue: number; expenses: number; satisfaction: number; visitorPeak: number }) => void;
 }
 
+const IS_DEBUG = true;
+
 export const useGameState = create<GameState>((set, get) => ({
-  money: CONSTANTS.STARTING_MONEY,
+  money: IS_DEBUG ? 100000 : CONSTANTS.STARTING_MONEY,
+  gridSize: CONSTANTS.GRID_SIZE,
   day: 1,
   month: 1,
-  rating: 50.0,
-  stars: 0,
+  stars: IS_DEBUG ? 5 : 0,
+  rating: 50,
   visitorsCount: 0,
   speed: 1,
   gamePaused: false,
-  gridSize: CONSTANTS.GRID_SIZE,
-
   weather: 'sunny',
   nextWeather: 'cloudy',
-
+  
   ticketMode: 'paid',
   ticketPrice: 10,
   loan: createDefaultLoan(),
   currentMonthRevenue: 0,
   currentMonthExpenses: 0,
   historicalData: [],
-
-  researchPoints: 0,
-  monthlyResearchBudget: 0,
-  unlockedTechs: [],
-
+  monthlyResearchBudget: 500,
+  researchPoints: IS_DEBUG ? 1000 : 0,
+  unlockedTechs: IS_DEBUG 
+    ? ['thrill_1', 'thrill_2', 'gentle_1', 'gentle_2', 'service_1', 'service_2', 'service_3', 'ops_1', 'ops_2'] 
+    : [],
   messages: [],
 
   currentSaveId: `park_${Date.now()}`,
@@ -170,7 +171,13 @@ export const useGameState = create<GameState>((set, get) => ({
   setGridSize: (size) => set({ gridSize: size }),
 
   addMessage: (msg) => set((state) => {
-    const messages = [msg, ...state.messages].slice(0, 20);
+    // Ensure ID uniqueness to prevent React key collision errors
+    let finalId = msg.id;
+    if (state.messages.some(m => m.id === finalId)) {
+        finalId = `${msg.id}_${Math.random().toString(36).slice(2, 5)}`;
+    }
+    const newMsg = { ...msg, id: finalId };
+    const messages = [newMsg, ...state.messages].slice(0, 20);
     return { messages };
   }),
   removeMessage: (id) => set((state) => ({
