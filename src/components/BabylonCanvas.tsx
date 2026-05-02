@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { Vector3 } from '@babylonjs/core';
 import { SceneManager } from '../engine/SceneManager';
 import { Tools } from '@babylonjs/core/Misc/tools.js';
 import { useGameState } from '../store/useGameState';
@@ -84,7 +85,12 @@ export function BabylonCanvas() {
     };
     window.addEventListener('onFacilityPlaced', handlePlacement);
     window.addEventListener('onTakeScreenshot', handleScreenshot);
+    const handleIncomePopup = (e: Event) => {
+      const { amount, x, z } = (e as CustomEvent).detail;
+      managerRef.current?.fxManager.spawnIncomePopup(new Vector3(x, 0, z), amount);
+    };
     window.addEventListener('onStarUp', handleStarUp);
+    window.addEventListener('onIncomePopup', handleIncomePopup);
     window.addEventListener('onPlayUIClick', handlePlayUIClick);
     window.addEventListener('onPlayPlaceSound', handlePlayPlace);
     window.addEventListener('onPlayDemolishSound', handlePlayDemolish);
@@ -104,6 +110,7 @@ export function BabylonCanvas() {
       window.removeEventListener('onFacilityPlaced', handlePlacement);
       window.removeEventListener('onTakeScreenshot', handleScreenshot);
       window.removeEventListener('onStarUp', handleStarUp);
+      window.removeEventListener('onIncomePopup', handleIncomePopup);
       window.removeEventListener('onPlayUIClick', handlePlayUIClick);
       window.removeEventListener('onPlayPlaceSound', handlePlayPlace);
       window.removeEventListener('onPlayDemolishSound', handlePlayDemolish);

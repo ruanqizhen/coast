@@ -6,6 +6,7 @@ import { EntityManager } from './EntityManager';
 import { RoadRenderer } from './RoadRenderer';
 import { SoundManager } from './SoundManager';
 import { LODManager } from './LODManager';
+import { VisualEffectsManager } from './VisualEffectsManager';
 import { useParkState } from '../store/useParkState';
 
 export class SceneManager {
@@ -21,6 +22,7 @@ export class SceneManager {
   public roadRenderer: RoadRenderer;
   public soundManager: SoundManager;
   public lodManager: LODManager;
+  public fxManager: VisualEffectsManager;
   public sunLight: DirectionalLight;
   private _currentSimSpeed: number = 1;
   private _speedChangeHandler: ((e: Event) => void) | null = null;
@@ -55,6 +57,8 @@ export class SceneManager {
     this.camera.lowerRadiusLimit = 20;
     this.camera.upperRadiusLimit = 300;
     this.camera.wheelPrecision = 5;
+    this.camera.panningSensibility = 300; // Higher = faster; default 50 is too slow
+    this.camera.panningInertia = 0;       // No inertia — instant response
     this.camera.upperBetaLimit = Math.PI / 2 - 0.1;
 
     this.camera.onViewMatrixChangedObservable.add(() => {
@@ -87,8 +91,9 @@ export class SceneManager {
     this.gridManager = new GridManager(this.scene);
     this.facilityManager = new FacilityManager(this.scene, this.shadowGenerator);
     this.lodManager = new LODManager(this.scene, this.camera);
-    this.entityManager = new EntityManager(this.scene, this.lodManager);
+    this.entityManager = new EntityManager(this.scene, this.lodManager, this.fxManager);
     this.roadRenderer = new RoadRenderer(this.scene);
+    this.fxManager = new VisualEffectsManager(this.scene);
     this.soundManager = new SoundManager(this.scene);
 
     // Distance fog for atmosphere
@@ -100,6 +105,7 @@ export class SceneManager {
     // Render loop
     this._engine.runRenderLoop(() => {
       this.updateDayNight();
+      this.fxManager.update();
       this.scene.render();
     });
 

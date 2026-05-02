@@ -1,8 +1,7 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useParkState } from '../store/useParkState';
-// useGameState available if needed for economy interactions
 import { FACILITIES, DEFAULT_TICKET_PRICES } from '../config/facilities';
-import { X, Wrench, Trash2, AlertTriangle } from 'lucide-react';
+import { X, Wrench, Trash2, AlertTriangle, Edit3 } from 'lucide-react';
 import './FacilityInfoCard.css';
 
 /**
@@ -55,6 +54,17 @@ export const FacilityInfoCard: React.FC = () => {
     window.dispatchEvent(new CustomEvent('onFacilityUpdate', { detail: { id: facility.instanceId, breakdown: false } }));
   };
 
+  const [editingName, setEditingName] = useState(false);
+  const [nameInput, setNameInput] = useState(facility.customName || def.name);
+  const displayName = facility.customName || def.name;
+
+  const handleRename = () => {
+    if (nameInput.trim()) {
+      updateFacility(facility.instanceId, { customName: nameInput.trim() });
+    }
+    setEditingName(false);
+  };
+
   const hasPricing = def.category === 'thrill' || def.category === 'gentle' || def.category === 'shop';
 
   return (
@@ -63,7 +73,15 @@ export const FacilityInfoCard: React.FC = () => {
       <div className="fic-header">
         <div className="fic-title">
           <span className="fic-icon">{def.category === 'thrill' ? '🎢' : def.category === 'gentle' ? '🎠' : def.category === 'shop' ? '🍟' : def.category === 'scenery' ? '🌿' : '🏛'}</span>
-          <span>{def.name}</span>
+          {editingName ? (
+            <input autoFocus value={nameInput} onChange={e => setNameInput(e.target.value)}
+              onBlur={handleRename} onKeyDown={e => e.key === 'Enter' && handleRename()}
+              style={{ width: 120, background: 'rgba(0,0,0,0.3)', border: '1px solid var(--primary-color)', borderRadius: 4, color: '#fff', padding: '2px 6px', fontSize: 14 }} />
+          ) : (
+            <span onClick={() => { setNameInput(displayName); setEditingName(true); }} style={{ cursor: 'pointer' }} title="点击改名">
+              {displayName} <Edit3 size={10} style={{ opacity: 0.4 }} />
+            </span>
+          )}
           {facility.breakdown && <AlertTriangle size={16} color="#E84855" />}
         </div>
         <button className="fic-close" onClick={() => selectFacility(null)}>

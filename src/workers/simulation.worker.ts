@@ -133,6 +133,34 @@ function getNearbyScenery(vx: number, vz: number): PlacedFacility[] {
   return results;
 }
 
+// Achievement tracking
+let achievements: Record<string, boolean> = {};
+
+function checkAchievements() {
+  const vCount = Object.keys(visitors).length;
+  const checks: Record<string, () => boolean> = {
+    first_profit: () => monthRevenue > 0,
+    visitors_100: () => vCount >= 100,
+    visitors_500: () => vCount >= 500,
+    build_coaster: () => facilities.some(f => f.typeId === 'coaster_basic' || f.typeId === 'launch_coaster'),
+    star_3: () => stars >= 3,
+    star_5: () => stars >= 5,
+    loan_free: () => loan.principal <= 0,
+    day_100: () => currentDay >= 100,
+  };
+  for (const [id, check] of Object.entries(checks)) {
+    if (!achievements[id] && check()) {
+      achievements[id] = true;
+      const names: Record<string, string> = {
+        first_profit: '第一桶金', visitors_100: '百人公园', visitors_500: '人山人海',
+        build_coaster: '过山车大亨', star_3: '三星公园', star_5: '五星传奇',
+        loan_free: '无债一身轻', day_100: '百年老店',
+      };
+      self.postMessage({ type: 'ACHIEVEMENT', payload: { id, name: names[id] || id } });
+    }
+  }
+}
+
 // Road congestion: count visitors per grid cell
 let congestionMap: Record<string, number> = {};
 let lastCongestionUpdate = 0;
@@ -291,6 +319,7 @@ function simulateDayTick() {
   spawnVisitors();
   updateWeather();
   updateFacilityAging();
+  checkAchievements();
   checkBreakdowns();
   updateSatisfaction();
   updateStarRating();
@@ -346,6 +375,9 @@ function createVisitor() {
   const ageGroups: VisitorAgeGroup[] = ['child', 'teen', 'adult', 'family'];
   const ageGroup = ageGroups[Math.floor(Math.random() * ageGroups.length)];
 
+  // 2% chance of VIP visitor
+  const isVIP = Math.random() < 0.02;
+
   // Park entrance is at the bottom center of the grid
   const gridCenter = (CONSTANTS.GRID_SIZE / 2) * CONSTANTS.CELL_SIZE;
   // Add slight random spread so visitors don't stack exactly
@@ -368,8 +400,9 @@ function createVisitor() {
     targetFacilityId: null,
     state: 'entering',
     needs: { hunger: 80, thirst: 80, toilet: 10, fatigue: 10, nausea: 0, fun: 70 },
-    money: CONSTANTS.VISITOR_MIN_MONEY + Math.random() * (CONSTANTS.VISITOR_MAX_MONEY - CONSTANTS.VISITOR_MIN_MONEY),
+    money: (isVIP ? 80 : CONSTANTS.VISITOR_MIN_MONEY) + Math.random() * (CONSTANTS.VISITOR_MAX_MONEY - CONSTANTS.VISITOR_MIN_MONEY),
     satisfaction: 60,
+    isVIP,
     ageGroup,
     excitementPref: 1 + Math.floor(Math.random() * 10),
     nauseaTolerance: 1 + Math.floor(Math.random() * 10),
@@ -384,16 +417,50 @@ function createVisitor() {
     lastDecisionTime: Date.now(),
   };
   newVisitorIds.add(vId);
+
+  if (isVIP) {
+    self.postMessage({ type: 'MESSAGE', payload: {
+      id: `msg_vip_${Date.now()}`,
+      text: `🌟 网红博主到访！这位VIP游客消费意愿极强，满意度将影响明日游客量`,
+      priority: 'milestone', timestamp: Date.now()
+    }});
+  }
 }
 
 // ═══════════════════════════════════
 // Weather (PRD §5.6)
 // ═══════════════════════════════════
+function triggerRandomEvent() {
+  const roll = Math.random();
+  if (roll < 0.08) {
+    // Sponsor offer
+    monthRevenue += 300;
+    self.postMessage({ type: 'ECONOMY_UPDATE', payload: { type: 'INCOME', amount: 300, reason: 'sponsor' } });
+    self.postMessage({ type: 'MESSAGE', payload: {
+      id: `msg_event_${Date.now()}`,
+      text: '💰 本地企业赞助了 $300！', priority: 'info', timestamp: Date.now()
+    }});
+  } else if (roll < 0.14 && rating < 50) {
+    // Warning about low satisfaction
+    self.postMessage({ type: 'MESSAGE', payload: {
+      id: `msg_event_${Date.now()}`,
+      text: '📋 旅游局提醒：游客满意度偏低，请改善服务质量！', priority: 'warning', timestamp: Date.now()
+    }});
+  } else if (roll < 0.18 && visitorPeak > 100) {
+    // Crowd surge
+    self.postMessage({ type: 'MESSAGE', payload: {
+      id: `msg_event_${Date.now()}`,
+      text: '🎪 附近活动吸引了大批游客！今日入园人数增加', priority: 'info', timestamp: Date.now()
+    }});
+  }
+}
+
 function updateWeather() {
-  // Change weather every ~5 days
+  // Change weather + random events every ~5 days
   if (currentDay % 5 === 0) {
     weather = nextWeather;
     nextWeather = rollWeather();
+    triggerRandomEvent();
     self.postMessage({ type: 'WEATHER_UPDATE', payload: { current: weather, next: nextWeather } });
 
     // Heavy rain → pause outdoor facilities

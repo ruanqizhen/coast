@@ -123,6 +123,10 @@ export function App() {
         gState.setRating(payload);
       } else if (type === 'ECONOMY_UPDATE') {
         gState.addMoney(payload.amount);
+        if (payload.amount > 0 && payload.reason) {
+          const center = CONSTANTS.GRID_SIZE / 2 * CONSTANTS.CELL_SIZE;
+          window.dispatchEvent(new CustomEvent('onIncomePopup', { detail: { amount: payload.amount, x: center, z: center } }));
+        }
       } else if (type === 'FACILITY_BREAKDOWN') {
          window.dispatchEvent(new CustomEvent('onFacilityUpdate', { detail: { id: payload, breakdown: true }}));
          window.dispatchEvent(new CustomEvent('onBreakdownAlarm'));
@@ -135,6 +139,11 @@ export function App() {
          window.dispatchEvent(new CustomEvent('onStarUp', { detail: payload }));
       } else if (type === 'LOAN_UPDATE') {
          gState.setLoan(payload);
+      } else if (type === 'ACHIEVEMENT') {
+         gState.addMessage({
+           id: `ach_${payload.id}`, text: `🏆 成就解锁: ${payload.name}`,
+           priority: 'milestone', timestamp: Date.now()
+         });
       }
     };
 

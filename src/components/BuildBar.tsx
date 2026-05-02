@@ -77,6 +77,7 @@ export function BuildBar() {
   const [activeTab, setActiveTab] = useState<Category | 'staff' | 'road'>('thrill');
   const enterPlacementMode = useParkState(state => state.enterPlacementMode);
   const placementMode = useParkState(state => state.placementMode);
+  const placementCategory = useParkState(state => state.placementCategory);
   const selectedFacilityToPlace = useParkState(state => state.selectedFacilityToPlace);
   const exitPlacementMode = useParkState(state => state.exitPlacementMode);
   const toggleCoasterBuilder = useParkState(state => state.toggleCoasterBuilder);

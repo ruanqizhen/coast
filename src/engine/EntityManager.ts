@@ -2,6 +2,7 @@ import { Scene, MeshBuilder, PBRMaterial, Color3, Vector3, Mesh, TransformNode, 
 import { useParkState } from '../store/useParkState';
 import { ObjectPool } from './ObjectPool';
 import { LODManager } from './LODManager';
+import { VisualEffectsManager } from './VisualEffectsManager';
 import type { Visitor, Staff, VomitPoint, StaffType } from '../types';
 
 // Predefined clothing palettes for randomized visitor variety
@@ -65,10 +66,12 @@ export class EntityManager {
   private mechanicPantsMat: StandardMaterial;
 
   private lodManager: LODManager | null;
+  private fxManager: VisualEffectsManager | null;
 
-  constructor(scene: Scene, lodManager?: LODManager) {
+  constructor(scene: Scene, lodManager?: LODManager, fxManager?: VisualEffectsManager) {
     this.scene = scene;
     this.lodManager = lodManager ?? null;
+    this.fxManager = fxManager ?? null;
 
     // Create visitor templates for instanced rendering
     this.createVisitorTemplates();
@@ -323,32 +326,25 @@ export class EntityManager {
   }
 
   private updateVisitors(visitors: Record<string, Visitor>) {
-      const hasTemplates = this.visitorTemplates.length > 0;
       for (const id in visitors) {
           const v = visitors[id];
-          if (!this.visitorInstances[id] && !this.visitorNodes[id]) {
-            if (hasTemplates) {
-              // Use instanced mesh from pre-merged templates
-              const tplIdx = Math.floor(Math.random() * this.visitorTemplates.length);
-              const tpl = this.visitorTemplates[tplIdx];
-              const instance = tpl.createInstance(id);
-              instance.isPickable = true;
-              this.visitorInstances[id] = instance;
-            } else {
-              // Fallback: individual humanoid
-              const node = this.createHumanoid(
-                  id, pickRandom(SKIN_TONES), pickRandom(SHIRT_COLORS),
-                  pickRandom(PANTS_COLORS), pickRandom(HAIR_COLORS), 0.75, true
-              );
-              this.visitorNodes[id] = node;
-            }
+          if (!this.visitorNodes[id]) {
+            const node = this.createHumanoid(
+                id, pickRandom(SKIN_TONES), pickRandom(SHIRT_COLORS),
+                pickRandom(PANTS_COLORS), pickRandom(HAIR_COLORS), 0.75, true
+            );
+            this.visitorNodes[id] = node;
           }
-          const node = this.visitorInstances[id] || this.visitorNodes[id];
+          const node = this.visitorNodes[id];
           if (node) {
             // Walking bob animation
             if (!this.visitorBobPhases[id]) this.visitorBobPhases[id] = Math.random() * Math.PI * 2;
             const bobY = v.state === 'walking' ? Math.sin(Date.now() * 0.008 + this.visitorBobPhases[id]) * 0.06 : 0;
             node.position = new Vector3(v.pos.x, bobY, v.pos.z);
+            // Emotion bubble
+            if (this.fxManager) {
+              this.fxManager.updateVisitorEmotion(id, v.satisfaction, node.position);
+            }
             if (this.lodManager && !node.metadata?.lodTracked) {
               this.lodManager.track(id, node, 'visitor', () => ({ x: v.pos.x, z: v.pos.z }));
               node.metadata = { ...node.metadata, lodTracked: true };
@@ -357,17 +353,10 @@ export class EntityManager {
       }
 
       // Delete old visitors
-      for (const id in this.visitorInstances) {
-          if (!visitors[id]) {
-              if (this.lodManager) this.lodManager.untrack(id);
-              this.visitorInstances[id].dispose();
-              delete this.visitorInstances[id];
-              delete this.visitorBobPhases[id];
-          }
-      }
       for (const id in this.visitorNodes) {
           if (!visitors[id]) {
               if (this.lodManager) this.lodManager.untrack(id);
+              if (this.fxManager) this.fxManager.removeVisitorEmotion(id);
               this.visitorNodes[id].dispose();
               delete this.visitorNodes[id];
               delete this.visitorBobPhases[id];

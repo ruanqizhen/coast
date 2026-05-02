@@ -76,6 +76,7 @@ export interface PlacedFacility {
   lastRepairDay: number;    // Day of last repair
   builtOnDay: number;       // Day facility was built (for refund calc)
   durability: number;       // 0–100, decreases with vandalism, 0 = breakdown
+  customName?: string;       // Player-set custom name
   trackPieces?: CoasterTrackPiece[];
 }
 
@@ -128,6 +129,7 @@ export interface Visitor {
   ridesCount: number;         // Total rides taken this visit
   enteredOnDay: number;       // Day they entered the park
   lastDecisionTime: number;   // Timestamp of last AI decision
+  isVIP?: boolean;            // VIP visitor: higher spending, spawns with announcement
 }
 
 // ──────────────────────────────────

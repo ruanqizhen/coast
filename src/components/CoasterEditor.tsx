@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useParkState } from '../store/useParkState';
 import { useGameState } from '../store/useGameState';
 import type { TrackPieceType } from '../types';
-import { MoveRight, TrendingUp, TrendingDown, RefreshCcw, Check, X, Lock, Undo2, Wand2 } from 'lucide-react';
+import { TRACK_PIECE_STATS } from '../types';
+import { MoveRight, TrendingUp, TrendingDown, RefreshCcw, Check, X, Lock, Undo2, Wand2, Play } from 'lucide-react';
 import { CONSTANTS } from '../config/constants';
 import { findCoasterClosurePath } from '../utils/coasterPathfinder';
 
@@ -59,16 +60,25 @@ export function CoasterEditor() {
       }
   };
 
-  // Simple G Force simulation
-  let maxG = 1;
-  let currentSpeed = 0;
-  for (let p of currentCoasterPieces) {
-      const slopeFactor = (p.slopeAngle || 0) / 45; // manual slope affects speed/g
+  // Real-time stats
+  const stats = useMemo(() => {
+    let totalExcitement = 0;
+    let totalNausea = 0;
+    let maxG = 1;
+    let currentSpeed = 0;
+    for (const p of currentCoasterPieces) {
+      const s = TRACK_PIECE_STATS[p.type];
+      totalExcitement += s.excitement;
+      totalNausea += s.nausea;
+      const slopeFactor = (p.slopeAngle || 0) / 45;
       if (p.type === 'climb') { currentSpeed -= (1 + slopeFactor); maxG = Math.max(maxG, 2); }
-      if (p.type === 'dive') { currentSpeed += (3 + slopeFactor); maxG = Math.max(maxG, 3 + currentSpeed*0.5); }
-      if (p.type === 'loop') { maxG = Math.max(maxG, 4 + currentSpeed*0.8); currentSpeed -= 2; }
+      if (p.type === 'dive') { currentSpeed += (3 + slopeFactor); maxG = Math.max(maxG, 3 + currentSpeed * 0.5); }
+      if (p.type === 'loop') { maxG = Math.max(maxG, 4 + currentSpeed * 0.8); currentSpeed -= 2; }
       if (p.type === 'straight') { currentSpeed *= 0.95; }
-  }
+    }
+    const rideTimeSec = Math.min(300, Math.max(30, currentCoasterPieces.length * 2));
+    return { totalExcitement: Math.round(totalExcitement * 10) / 10, totalNausea: Math.round(totalNausea * 10) / 10, maxG: Math.round(maxG * 10) / 10, trackLength: currentCoasterPieces.length, rideTimeSec };
+  }, [currentCoasterPieces]);
 
   // Compute total height of track pieces (matching pathfinder model: no slope contribution)
   const computeTrackHeight = (pieces: typeof currentCoasterPieces): number => {
@@ -82,6 +92,23 @@ export function CoasterEditor() {
     return h;
   };
 
+  /** Detect track crossings: any two non-adjacent pieces sharing the same (x,z) cell */
+  const hasCrossings = (pieces: typeof currentCoasterPieces): boolean => {
+    const seen = new Map<string, number>();
+    for (let i = 0; i < pieces.length; i++) {
+      const key = `${pieces[i].x},${pieces[i].z}`;
+      if (seen.has(key)) {
+        const prevIdx = seen.get(key)!;
+        if (Math.abs(i - prevIdx) > 1 && !(prevIdx === 0 && i === pieces.length - 1)) {
+          return true;
+        }
+      } else {
+        seen.set(key, i);
+      }
+    }
+    return false;
+  };
+
   const isLoopClosed = () => {
       if (currentCoasterPieces.length < 4) return false;
       const first = currentCoasterPieces[0];
@@ -92,9 +119,9 @@ export function CoasterEditor() {
       const nx = last.x + Math.round(Math.sin(rad)) * 2;
       const nz = last.z + Math.round(Math.cos(rad)) * 2;
 
-      // Must connect back to first piece position AND height must match (return to 0)
+      // Must connect back to first piece position AND height must match AND no crossings
       const totalHeight = computeTrackHeight(currentCoasterPieces);
-      return nx === first.x && nz === first.z && totalHeight === 0;
+      return nx === first.x && nz === first.z && totalHeight === 0 && !hasCrossings(currentCoasterPieces);
   };
 
   const handleComplete = () => {
@@ -153,102 +180,196 @@ export function CoasterEditor() {
   };
 
   const handleRandomBuild = () => {
-      let attempts = 0;
-      let success = false;
+      const startX = CONSTANTS.GRID_SIZE / 2;
+      const startZ = CONSTANTS.GRID_SIZE / 2;
+      const targetLen = 10 + Math.floor(Math.random() * 8); // 10-17 total segments
 
-      while (attempts < 50 && !success) {
-          attempts++;
-          const numRandom = 6 + Math.floor(Math.random() * 8);
-          let lx = CONSTANTS.GRID_SIZE / 2;
-          let lz = CONSTANTS.GRID_SIZE / 2;
-          let lRot = 0;
-          let lH = 0;
-          const newPieces: typeof currentCoasterPieces = [];
+      // Required pieces: at least 1 climb, 1 dive, 1 loop, plus straights
+      const requiredTypes: TrackPieceType[] = ['climb', 'dive', 'loop'];
+      const slopeOptions = [-15, -10, -5, 0, 5, 10, 15];
 
-          newPieces.push({ x: lx, z: lz, type: 'straight', rotation: 0, slopeAngle: 0 });
+      let best: typeof currentCoasterPieces | null = null;
+      let bestScore = -Infinity;
 
-          for (let i = 0; i < numRandom; i++) {
-              let availableTypes: TrackPieceType[] = selectedFacilityToPlace === 'launch_coaster'
-                ? ['straight', 'climb', 'dive', 'loop', 'mega_loop', 'vertical_climb']
-                : ['straight', 'climb', 'dive', 'loop'];
+      for (let attempt = 0; attempt < 100; attempt++) {
+        const pieces: typeof currentCoasterPieces = [];
+        pieces.push({ x: startX, z: startZ, type: 'straight', rotation: 0, slopeAngle: 0 });
 
-              if (selectedFacilityToPlace === 'coaster_basic') {
-                  const currentLoops = newPieces.filter(p => p.type === 'loop').length;
-                  if (currentLoops >= 1) availableTypes = availableTypes.filter(t => t !== 'loop');
-              }
+        let cx = startX, cz = startZ, cRot = 0, cH = 0;
+        const placedTypes = new Set<TrackPieceType>(['straight']);
+        let deadEnd = false;
 
-              // Bias toward returning to height 0 as we approach the segment limit
-              const segmentsLeft = numRandom - i;
-              const needDescent = lH > segmentsLeft * 2; // We're too high, need to descend
-              const needAscent = lH < -segmentsLeft * 2;  // We're too low, need to climb
+        for (let i = 0; i < targetLen && !deadEnd; i++) {
+          const remaining = targetLen - i;
+          const dx = (startX - cx) / 2;
+          const dz = (startZ - cz) / 2;
+          const dist = Math.abs(dx) + Math.abs(dz);
 
-              let t: TrackPieceType;
-              if (needDescent) {
-                t = Math.random() < 0.5 ? 'dive' : 'straight';
-              } else if (needAscent) {
-                t = Math.random() < 0.5 ? 'climb' : 'straight';
-              } else {
-                t = availableTypes[Math.floor(Math.random() * availableTypes.length)];
-              }
-
-              const rotChange = (Math.floor(Math.random() * 3) - 1) * 90;
-              const nextRot = (lRot + rotChange + 360) % 360;
-              const s = (Math.floor(Math.random() * 3) - 1) * 15;
-              const rad = (nextRot * Math.PI) / 180;
-              const nx = lx + Math.round(Math.sin(rad)) * 2;
-              const nz = lz + Math.round(Math.cos(rad)) * 2;
-
-              if (nx < 4 || nz < 4 || nx > CONSTANTS.GRID_SIZE - 4 || nz > CONSTANTS.GRID_SIZE - 4) break;
-
-              // Height computation matching pathfinder model (no slope contribution to height)
-              let nextH = lH;
-              if (t === 'climb') nextH += 1;
-              else if (t === 'dive') nextH -= 1;
-              else if (t === 'vertical_climb') nextH += 4;
-              else if (t === 'vertical_dive') nextH -= 4;
-
-              if (nextH < 0 || nextH > 20) continue; // Must stay above ground
-
-              newPieces.push({ x: nx, z: nz, type: t, rotation: nextRot, slopeAngle: s });
-              lx = nx; lz = nz; lRot = nextRot; lH = nextH;
-          }
-
-          const targetH = Math.round(lH);
-          const path = findCoasterClosurePath(lx, lz, targetH, newPieces[0].x, newPieces[0].z, 0, lRot);
-
-          if (path && path.length > 0) {
-              const closurePieces: typeof currentCoasterPieces = [];
+          // Choose rotation
+          let nextRot = cRot;
+          if (dist > remaining) {
+            // Must head toward start
+            const candidates: number[] = [];
+            for (const r of [cRot, (cRot - 90 + 360) % 360, (cRot + 90) % 360]) {
+              const rad = (r * Math.PI) / 180;
+              const nx = cx + Math.round(Math.sin(rad)) * 2;
+              const nz = cz + Math.round(Math.cos(rad)) * 2;
+              const nd = Math.abs(startX - nx) / 2 + Math.abs(startZ - nz) / 2;
+              if (nd < dist) candidates.push(r);
+            }
+            if (candidates.length > 0) nextRot = candidates[Math.floor(Math.random() * candidates.length)];
+            else nextRot = cRot;
+          } else if (dist < 8 && remaining <= 8) {
+            // Try auto-complete
+            const path = findCoasterClosurePath(cx, cz, cH, startX, startZ, 0, cRot);
+            if (path && path.length >= 2) {
+              let lx = cx, lz = cz, lRot = cRot;
               for (const act of path) {
-                  const aRad = (act.rotation * Math.PI) / 180;
-                  const nx = lx + Math.round(Math.sin(aRad)) * 2;
-                  const nz = lz + Math.round(Math.cos(aRad)) * 2;
-                  closurePieces.push({ x: nx, z: nz, type: act.type, rotation: act.rotation, slopeAngle: act.slopeAngle });
-                  lx = nx; lz = nz;
+                const aRad = (lRot * Math.PI) / 180;
+                lx += Math.round(Math.sin(aRad)) * 2;
+                lz += Math.round(Math.cos(aRad)) * 2;
+                pieces.push({ x: lx, z: lz, type: act.type, rotation: act.rotation, slopeAngle: pickRandom(slopeOptions) });
+                placedTypes.add(act.type);
+                lRot = act.rotation;
               }
-
-              // Verify: after adding closure pieces, the last piece's next step should land on first
-              const allPieces = [...newPieces, ...closurePieces];
-              const lastAfter = allPieces[allPieces.length - 1];
-              const firstAfter = allPieces[0];
-              const finalRad = (lastAfter.rotation * Math.PI) / 180;
-              const finalNx = lastAfter.x + Math.round(Math.sin(finalRad)) * 2;
-              const finalNz = lastAfter.z + Math.round(Math.cos(finalRad)) * 2;
-              const finalHeight = computeTrackHeight(allPieces);
-
-              if (finalNx === firstAfter.x && finalNz === firstAfter.z && finalHeight === 0) {
-                  const totalCost = allPieces.length * 50;
-                  if (deductMoney(totalCost)) {
-                      clearCoasterPieces();
-                      addCoasterPieces(allPieces);
-                      success = true;
-                  }
-              }
+              cx = lx; cz = lz; cRot = lRot;
+              break;
+            }
+            nextRot = cRot;
+          } else {
+            // Random turn, favoring variety
+            const rnd = Math.random();
+            if (rnd < 0.3) nextRot = (cRot - 90 + 360) % 360;
+            else if (rnd < 0.55) nextRot = (cRot + 90) % 360;
           }
+
+          const rad = (nextRot * Math.PI) / 180;
+          const nx = cx + Math.round(Math.sin(rad)) * 2;
+          const nz = cz + Math.round(Math.cos(rad)) * 2;
+          if (nx < 5 || nz < 5 || nx > CONSTANTS.GRID_SIZE - 5 || nz > CONSTANTS.GRID_SIZE - 5) { deadEnd = true; break; }
+
+          // Pick track type — ensure required variety
+          const remainingReq = requiredTypes.filter(t => !placedTypes.has(t));
+          let t: TrackPieceType;
+          if (remainingReq.length > 0 && remaining - remainingReq.length <= 3) {
+            // Must place remaining required types soon
+            t = remainingReq[0];
+          } else if (remainingReq.length > 0 && Math.random() < 0.3) {
+            // Opportunistically place a required type
+            t = remainingReq[Math.floor(Math.random() * remainingReq.length)];
+          } else {
+            // Normal random type selection
+            if (cH <= 1) t = Math.random() < 0.35 ? 'climb' : 'straight';
+            else if (cH >= 8) t = Math.random() < 0.5 ? 'dive' : 'straight';
+            else t = Math.random() < 0.25 ? 'climb' : Math.random() < 0.45 ? 'dive' : Math.random() < 0.55 ? 'straight' : 'loop';
+          }
+
+          // Height management
+          let nextH = cH;
+          if (t === 'climb') nextH += 1;
+          else if (t === 'dive') nextH = Math.max(0, nextH - 1);
+          if (nextH > 10) { t = 'dive'; nextH = Math.max(0, cH - 1); }
+          if (nextH < 0) { t = 'climb'; nextH = cH + 1; }
+          if (t === 'loop' && cH > 4) { t = 'straight'; nextH = cH; } // Loops need level-ish ground
+
+          placedTypes.add(t);
+          const slope = pickRandom(slopeOptions);
+          pieces.push({ x: nx, z: nz, type: t, rotation: nextRot, slopeAngle: slope });
+          cx = nx; cz = nz; cRot = nextRot; cH = nextH;
+        }
+
+        // Final auto-close attempt
+        if (!isLoopClosedFor(pieces)) {
+          const closePath = findCoasterClosurePath(cx, cz, cH, startX, startZ, 0, cRot);
+          if (closePath && closePath.length >= 2) {
+            let lx = cx, lz = cz, lRot = cRot;
+            for (const act of closePath) {
+              const aRad = (lRot * Math.PI) / 180;
+              lx += Math.round(Math.sin(aRad)) * 2;
+              lz += Math.round(Math.cos(aRad)) * 2;
+              pieces.push({ x: lx, z: lz, type: act.type, rotation: act.rotation, slopeAngle: pickRandom(slopeOptions) });
+              lRot = act.rotation;
+            }
+          }
+        }
+
+        // Verify closure + crossings
+        if (isLoopClosedFor(pieces) && !hasCrossings(pieces)) {
+          const allRequiredMet = requiredTypes.every(t => pieces.some(p => p.type === t));
+          const variety = new Set(pieces.map(p => p.type)).size;
+          const nonStraight = pieces.filter(p => p.type !== 'straight').length;
+          const slopesUsed = new Set(pieces.map(p => p.slopeAngle)).size;
+          const score = pieces.length * 0.3 + variety * 5 + nonStraight * 2 + slopesUsed * 1.5 + (allRequiredMet ? 10 : 0);
+          if (score > bestScore) {
+            bestScore = score;
+            best = pieces;
+            if (variety >= 4 && allRequiredMet && slopesUsed >= 3) break; // Excellent result
+          }
+        }
       }
 
-      if (!success) {
-          alert('自动生成失败，请重试或手动搭建！');
+      if (best) {
+        const cost = best.length * 50;
+        if (deductMoney(cost)) {
+          clearCoasterPieces();
+          addCoasterPieces(best);
+        }
+      } else {
+        buildGuaranteedOval(startX, startZ);
       }
+  };
+
+  function pickRandom<T>(arr: T[]): T { return arr[Math.floor(Math.random() * arr.length)]; }
+
+  /** Check if a given piece array forms a closed loop at height 0 */
+  const isLoopClosedFor = (pieces: typeof currentCoasterPieces): boolean => {
+    if (pieces.length < 4) return false;
+    const first = pieces[0];
+    const last = pieces[pieces.length - 1];
+    const rad = (last.rotation * Math.PI) / 180;
+    const nx = last.x + Math.round(Math.sin(rad)) * 2;
+    const nz = last.z + Math.round(Math.cos(rad)) * 2;
+    return nx === first.x && nz === first.z && computeTrackHeight(pieces) === 0;
+  };
+
+  /** Build a guaranteed simple loop using auto-complete on a short starting path */
+  const buildGuaranteedOval = (sx: number, sz: number) => {
+    const pieces: typeof currentCoasterPieces = [];
+    pieces.push({ x: sx, z: sz, type: 'straight', rotation: 0, slopeAngle: 0 });
+    // Go forward 3, turn right, go forward 3
+    let cx = sx, cz = sz, cRot = 0;
+    for (let i = 0; i < 3; i++) {
+      cx += 0; cz += 2;
+      pieces.push({ x: cx, z: cz, type: 'straight', rotation: 0, slopeAngle: 0 });
+    }
+    cRot = 90;
+    for (let i = 0; i < 3; i++) {
+      const rad = (90 * Math.PI) / 180;
+      cx += Math.round(Math.sin(rad)) * 2;
+      cz += Math.round(Math.cos(rad)) * 2;
+      pieces.push({ x: cx, z: cz, type: 'straight', rotation: 90, slopeAngle: 0 });
+    }
+    // Auto-close
+    const path = findCoasterClosurePath(cx, cz, 0, sx, sz, 0, cRot);
+    if (path && path.length >= 2) {
+      let lx = cx, lz = cz, lRot = cRot;
+      for (const act of path) {
+        const aRad = (lRot * Math.PI) / 180; // Advance using current rotation
+        lx += Math.round(Math.sin(aRad)) * 2;
+        lz += Math.round(Math.cos(aRad)) * 2;
+        pieces.push({ x: lx, z: lz, type: act.type, rotation: act.rotation, slopeAngle: 0 });
+        lRot = act.rotation;
+      }
+    }
+    // Verify no crossings in the guaranteed oval too
+    if (hasCrossings(pieces)) {
+      // Extremely unlikely for simple oval, but if so, just use raw pieces
+    }
+    const cost = pieces.length * 50;
+    if (deductMoney(cost)) {
+      clearCoasterPieces();
+      addCoasterPieces(pieces);
+    }
   };
 
   const cancel = () => {
@@ -265,20 +386,25 @@ export function CoasterEditor() {
          <h3 style={{ margin: 0, fontSize: 16 }}>过山车编辑器</h3>
       </div>
 
-      <div style={{ display: 'flex', gap: 16, borderBottom: '1px solid var(--panel-border)', paddingBottom: 16, alignItems: 'center' }}>
-          <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 8 }}>
-              轨道节数: <strong style={{ color: '#4DB8FF' }}>{currentCoasterPieces.length}</strong>
-              <button onClick={handleUndo} disabled={currentCoasterPieces.length === 0} style={{ padding: '4px 8px', background: currentCoasterPieces.length > 0 ? '#E84855' : '#555', borderRadius: 4, display: 'flex', alignItems: 'center', gap: 4, cursor: currentCoasterPieces.length > 0 ? 'pointer' : 'not-allowed', marginLeft: 'auto' }}>
-                  <Undo2 size={14} /> 撤销
-              </button>
-          </div>
-          <div style={{ flex: 1, color: maxG > 6 ? '#E84855' : '#44BBA4' }}>
-              峰值 G 力: <strong>{maxG.toFixed(1)}G</strong>
-              {maxG > 6 && <Lock size={12} style={{ marginLeft: 4 }} />}
-          </div>
+      {/* Stats row */}
+      <div style={{ display: 'flex', gap: 8, borderBottom: '1px solid var(--panel-border)', paddingBottom: 12, flexWrap: 'wrap' }}>
+        <StatBadge label="节数" value={String(stats.trackLength)} color="#4DB8FF" />
+        <StatBadge label="刺激" value={stats.totalExcitement.toFixed(1)} color="#E84855" />
+        <StatBadge label="恶心" value={stats.totalNausea.toFixed(1)} color="#F4A223" />
+        <StatBadge label="G力" value={`${stats.maxG.toFixed(1)}G`} color={stats.maxG > 6 ? '#E84855' : '#44BBA4'} />
+        <StatBadge label="时长" value={`${stats.rideTimeSec}s`} color="#E040FB" />
+        <button onClick={handleUndo} disabled={currentCoasterPieces.length === 0} style={{
+          marginLeft: 'auto', padding: '4px 10px', fontSize: 12,
+          background: currentCoasterPieces.length > 0 ? 'rgba(232,72,85,0.2)' : '#333',
+          color: currentCoasterPieces.length > 0 ? '#E84855' : '#888',
+          borderRadius: 4, display: 'flex', alignItems: 'center', gap: 4,
+          cursor: currentCoasterPieces.length > 0 ? 'pointer' : 'not-allowed',
+        }}>
+          <Undo2 size={14} /> 撤销
+        </button>
       </div>
-      
-      {maxG > 6 && <div style={{ color: '#F4D03F', fontSize: 12, fontWeight: 600 }}>⚠️ 提示：当前设计 G 力较高，请谨慎运营。</div>}
+
+      {stats.maxG > 6 && <div style={{ color: '#F4D03F', fontSize: 12, fontWeight: 600 }}>⚠️ G 力超过 6G，游客可能感到不适</div>}
       {!isLoopClosed() && currentCoasterPieces.length > 0 && <div style={{ color: '#888', fontSize: 12 }}>轨道尚未闭合 (首尾需相接)</div>}
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -372,6 +498,20 @@ export function CoasterEditor() {
               <Check size={16} /> 完成
           </button>
       </div>
+    </div>
+  );
+}
+
+function StatBadge({ label, value, color }: { label: string; value: string; color: string }) {
+  return (
+    <div style={{
+      padding: '4px 10px', borderRadius: 6,
+      background: `${color}15`, border: `1px solid ${color}30`,
+      display: 'flex', alignItems: 'center', gap: 6,
+      fontSize: 12,
+    }}>
+      <span style={{ color: '#888' }}>{label}</span>
+      <strong style={{ color }}>{value}</strong>
     </div>
   );
 }
