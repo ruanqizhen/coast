@@ -65,9 +65,9 @@ export function DataDashboard({ onClose }: Props) {
 
     return [
       { name: '设施维护', value: maintenanceCost, color: '#E84855' },
-      { name: '员工工资', value: -staffSalaries, color: '#2E86AB' },
-      { name: '贷款利息', value: -loanInterest, color: '#F4A223' },
-      { name: '研发投入', value: -researchCost, color: '#E040FB' },
+      { name: '员工工资', value: staffSalaries, color: '#2E86AB' },
+      { name: '贷款利息', value: loanInterest, color: '#F4A223' },
+      { name: '研发投入', value: researchCost, color: '#E040FB' },
     ];
   }, [facilities, staff, loan, monthlyResearchBudget]);
 

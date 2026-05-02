@@ -93,7 +93,7 @@ export class GridManager {
               return true; // Out of bounds
           }
           for (const fac of facilities) {
-              if (fac.typeId === 'coaster_wood' || fac.typeId === 'coaster_steel') continue; // Allow coasters to overlap coasters for now, or just self
+              if (fac.typeId === 'coaster_basic' || fac.typeId === 'launch_coaster') continue;
               const fdef = FACILITIES[fac.typeId as keyof typeof FACILITIES];
               if (!fdef) continue;
               let sx = fdef.sizeX;

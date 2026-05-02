@@ -12,7 +12,6 @@ import { VisitorInfoCard } from './components/VisitorInfoCard';
 import { TutorialOverlay } from './components/TutorialOverlay';
 import { saveManager } from './engine/SaveSystem';
 import { CONSTANTS } from './config/constants';
-import { buildWeightGrid } from './engine/PathfindingSystem';
 import type { PlacedFacility, SaveData } from './types';
 
 export function App() {
@@ -112,17 +111,6 @@ export function App() {
          gState.setStars(payload);
       } else if (type === 'LOAN_UPDATE') {
          gState.setLoan(payload);
-      } else if (type === 'CONGESTION_UPDATE') {
-        const roads = useParkState.getState().roads;
-        const gridSize = useGameState.getState().gridSize;
-        const flatGrid: (string | null)[][] = Array.from({ length: gridSize }, () => Array(gridSize).fill(null));
-        for (const r of roads) {
-          if (r.x >= 0 && r.z >= 0 && r.x < gridSize && r.z < gridSize) {
-            flatGrid[r.x][r.z] = r.type;
-          }
-        }
-        const wg = buildWeightGrid(flatGrid, false, payload);
-        workerRef.current?.postMessage({ type: 'SYNC_WEIGHT_GRID', payload: wg });
       }
     };
 
@@ -247,6 +235,7 @@ export function App() {
          if (workerRef.current) {
              workerRef.current.postMessage({ type: 'REMOVE_FACILITY', payload: e.detail });
          }
+         window.dispatchEvent(new CustomEvent('onPlayDemolishSound'));
      };
      window.addEventListener('onFacilityDemolish', handleDemolish);
 
@@ -279,6 +268,8 @@ export function App() {
         workerRef.current.postMessage({ type: 'SET_SPEED', payload: { speed } });
       }
     }
+    // Sync speed to SceneManager for day/night cycle
+    window.dispatchEvent(new CustomEvent('onSpeedChange', { detail: gamePaused ? 0 : speed }));
   }, [speed, gamePaused]);
 
   // Sync facilities to worker

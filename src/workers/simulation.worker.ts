@@ -54,6 +54,7 @@ let vandalismIncidents: Record<string, { startedAt: number; pos: { x: number; z:
 
 // Road congestion: count visitors per grid cell
 let congestionMap: Record<string, number> = {};
+let lastCongestionUpdate = 0;
 
 // ═══════════════════════════════════
 // Message Handler
@@ -84,9 +85,20 @@ self.onmessage = (e) => {
       loan = payload.economy?.loan || createDefaultLoan();
       ticketMode = payload.park?.settings?.ticketMode || 'free';
       ticketPrice = payload.park?.settings?.ticketPrice || 0;
+      // Ensure durability on loaded facilities
+      if (payload.facilities) {
+        for (const f of payload.facilities) {
+          if (f.durability === undefined) f.durability = 100;
+        }
+      }
       break;
     case 'SYNC_FACILITIES':
-      facilities = payload; break;
+      facilities = payload;
+      // Ensure durability field exists on loaded facilities
+      for (const f of facilities) {
+        if (f.durability === undefined) f.durability = 100;
+      }
+      break;
     case 'SYNC_ROADS':
       roadGrid = payload;
       weightGrid = buildWeightGrid(roadGrid, false);
@@ -1220,8 +1232,10 @@ function handleStaffArrival(s: Staff) {
         const baseRepairTime = CONSTANTS.MECHANIC_REPAIR_TIME;
         const actualRepairTime = unlockedTechs.includes('service_2') ? 8000 : baseRepairTime; // Medical/Service upgrade helps toolkit
         
+        const targetId = s.targetInstanceId;
         setTimeout(() => {
-          const f = facilities.find(ff => ff.instanceId === s.targetInstanceId);
+          const f = facilities.find(ff => ff.instanceId === targetId);
+          if (!f) return; // Facility was removed while repairing
           if (f) {
             f.breakdown = false;
             f.lastRepairDay = currentDay;
@@ -1313,7 +1327,9 @@ function updateCongestionMap() {
     congestionMap[key] = (congestionMap[key] || 0) + 1;
   }
   // Rebuild weight grid with congestion data every ~2 seconds
-  if (Date.now() % 2000 < 100) {
+  const now = Date.now();
+  if (now - lastCongestionUpdate > 2000) {
+    lastCongestionUpdate = now;
     weightGrid = buildWeightGrid(roadGrid, false, congestionMap);
   }
 }

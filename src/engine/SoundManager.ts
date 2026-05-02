@@ -16,7 +16,9 @@ export class SoundManager {
   private masterGain: GainNode | null = null;
   private rainNode: AudioBufferSourceNode | null = null;
   private rainGain: GainNode | null = null;
-  private bgmNodes: OscillatorNode[] = [];
+  private bgmOscillators: OscillatorNode[] = [];
+  private bgmGainNodes: GainNode[] = [];
+  private bgmTimeoutId: number | null = null;
   private bgmPlaying: boolean = false;
   private scene: Scene | null = null;
 
@@ -192,11 +194,19 @@ export class SoundManager {
       const bpm = 100;
       const noteLen = 60 / bpm;
 
+      // Clean up previous loop's oscillators
+      for (const osc of this.bgmOscillators) { try { osc.disconnect(); } catch {} }
+      for (const g of this.bgmGainNodes) { try { g.disconnect(); } catch {} }
+      this.bgmOscillators.length = 0;
+      this.bgmGainNodes.length = 0;
+
       pattern.forEach((ni, i) => {
         const osc = c.createOscillator();
         const g = c.createGain();
+        this.bgmOscillators.push(osc);
+        this.bgmGainNodes.push(g);
         osc.type = 'sine';
-        osc.frequency.value = notes[ni % notes.length] * 0.5; // lower octave for bass
+        osc.frequency.value = notes[ni % notes.length] * 0.5;
         const t = c.currentTime + i * noteLen * 0.5;
         g.gain.setValueAtTime(0, t);
         g.gain.linearRampToValueAtTime(0.08, t + 0.02);
@@ -209,6 +219,8 @@ export class SoundManager {
         if (i % 2 === 0) {
           const osc2 = c.createOscillator();
           const g2 = c.createGain();
+          this.bgmOscillators.push(osc2);
+          this.bgmGainNodes.push(g2);
           osc2.type = 'triangle';
           osc2.frequency.value = notes[(ni + 4) % notes.length] * 0.25;
           g2.gain.setValueAtTime(0, t);
@@ -221,9 +233,8 @@ export class SoundManager {
         }
       });
 
-      // Schedule next loop
       const loopDuration = pattern.length * noteLen * 0.5 * 1000;
-      setTimeout(playLoop, loopDuration);
+      this.bgmTimeoutId = window.setTimeout(playLoop, loopDuration);
     };
 
     playLoop();
@@ -231,6 +242,14 @@ export class SoundManager {
 
   stopBGM() {
     this.bgmPlaying = false;
+    if (this.bgmTimeoutId !== null) {
+      clearTimeout(this.bgmTimeoutId);
+      this.bgmTimeoutId = null;
+    }
+    for (const osc of this.bgmOscillators) { try { osc.disconnect(); } catch {} }
+    for (const g of this.bgmGainNodes) { try { g.disconnect(); } catch {} }
+    this.bgmOscillators.length = 0;
+    this.bgmGainNodes.length = 0;
   }
 
   // ── Facility spatial sounds ──
@@ -260,7 +279,12 @@ export class SoundManager {
   dispose() {
     this.stopAllSounds();
     this.facilitySounds.clear();
-    this.bgmNodes = [];
+    this.bgmOscillators = [];
+    this.bgmGainNodes = [];
+    if (this.bgmTimeoutId !== null) {
+      clearTimeout(this.bgmTimeoutId);
+      this.bgmTimeoutId = null;
+    }
     if (this.masterGain) {
       this.masterGain.disconnect();
       this.masterGain = null;

@@ -1,4 +1,4 @@
-import { Scene, ArcRotateCamera, Mesh, TransformNode, MeshBuilder, StandardMaterial, Color3, Vector3 } from '@babylonjs/core';
+import { ArcRotateCamera, Mesh, TransformNode } from '@babylonjs/core';
 import { CONSTANTS } from '../config/constants';
 
 interface TrackedEntity {
@@ -10,52 +10,22 @@ interface TrackedEntity {
 
 /**
  * LODManager: distance-based level-of-detail switching.
+ * Implements visibility-based LOD; billboard swap deferred to future.
  * PRD §7.2, §8.5
  */
 export class LODManager {
-  private scene: Scene;
   private camera: ArcRotateCamera;
   private entities: Map<string, TrackedEntity> = new Map();
-
-  // Billboard templates
-  private billboardAdult: Mesh;
-  private billboardChild: Mesh;
-  private billboardStaff: Mesh;
-
   private lastCameraHeight: number = 0;
+  private _renderObserver: (() => void) | null = null;
 
-  constructor(scene: Scene, camera: ArcRotateCamera) {
-    this.scene = scene;
+  constructor(_scene: any, camera: ArcRotateCamera) {
     this.camera = camera;
 
-    // Create shared billboard templates (invisible, cloned on use)
-    const bm = new StandardMaterial('billboardMat', scene);
-    bm.diffuseColor = new Color3(0.9, 0.7, 0.5);
-    bm.backFaceCulling = false;
-
-    this.billboardAdult = MeshBuilder.CreatePlane('bb_adult', { width: 1.2, height: 1.8 }, scene);
-    this.billboardAdult.material = bm;
-    this.billboardAdult.isVisible = false;
-    this.billboardAdult.billboardMode = Mesh.BILLBOARDMODE_ALL;
-
-    const bmChild = new StandardMaterial('bbChildMat', scene);
-    bmChild.diffuseColor = new Color3(0.85, 0.65, 0.45);
-    bmChild.backFaceCulling = false;
-    this.billboardChild = MeshBuilder.CreatePlane('bb_child', { width: 0.9, height: 1.3 }, scene);
-    this.billboardChild.material = bmChild;
-    this.billboardChild.isVisible = false;
-    this.billboardChild.billboardMode = Mesh.BILLBOARDMODE_ALL;
-
-    const bmStaff = new StandardMaterial('bbStaffMat', scene);
-    bmStaff.diffuseColor = new Color3(0.3, 0.7, 0.3);
-    bmStaff.backFaceCulling = false;
-    this.billboardStaff = MeshBuilder.CreatePlane('bb_staff', { width: 1.2, height: 1.8 }, scene);
-    this.billboardStaff.material = bmStaff;
-    this.billboardStaff.isVisible = false;
-    this.billboardStaff.billboardMode = Mesh.BILLBOARDMODE_ALL;
-
-    // Hook into render loop
-    this.scene.onBeforeRenderObservable.add(() => this.update());
+    // Hook into render loop for LOD checks (throttled internally)
+    const update = () => this.update();
+    _scene.onBeforeRenderObservable.add(update);
+    this._renderObserver = update;
   }
 
   track(id: string, node: TransformNode | Mesh, type: 'visitor' | 'facility' | 'scenery', basePos: () => { x: number; z: number }) {
@@ -67,7 +37,8 @@ export class LODManager {
   }
 
   private update() {
-    const camHeight = this.camera.radius;
+    // Actual height above ground = radius × sin(beta angle)
+    const camHeight = this.camera.radius * Math.sin(this.camera.beta);
     // Only check every ~500ms to avoid per-frame overhead
     if (Math.abs(camHeight - this.lastCameraHeight) < 3) return;
     this.lastCameraHeight = camHeight;
@@ -100,8 +71,5 @@ export class LODManager {
 
   dispose() {
     this.entities.clear();
-    this.billboardAdult.dispose();
-    this.billboardChild.dispose();
-    this.billboardStaff.dispose();
   }
 }
