@@ -134,10 +134,45 @@ export function DataDashboard({ onClose }: Props) {
           )}
 
           {activeTab === 'gauges' && (
-            <div style={{ display: 'flex', gap: 24, justifyContent: 'center', alignItems: 'center', flex: 1 }}>
-              <GaugeCard label="当日净利润" value={`$${netProfit.toLocaleString()}`} color={netProfit >= 0 ? '#44BBA4' : '#E84855'} />
-              <GaugeCard label="当前游客" value={`${visitorsCount}`} subtext="/1000" color="#2E86AB" />
-              <GaugeCard label="设施利用率" value={`${utilizationRate}%`} subtext={`${operatingFacilities}/${facilityCount}`} color="#F4A223" />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 24, flex: 1 }}>
+               <div style={{ display: 'flex', gap: 24, justifyContent: 'center', alignItems: 'center' }}>
+                  <GaugeCard label="当日净利润" value={`$${netProfit.toLocaleString()}`} color={netProfit >= 0 ? '#44BBA4' : '#E84855'} />
+                  <GaugeCard label="当前游客" value={`${visitorsCount}`} subtext="/1000" color="#2E86AB" />
+                  <GaugeCard label="设施利用率" value={`${utilizationRate}%`} subtext={`${operatingFacilities}/${facilityCount}`} color="#F4A223" />
+               </div>
+
+               <div style={{ padding: '20px', background: 'rgba(255,255,255,0.03)', borderRadius: 12, border: '1px solid rgba(255,255,255,0.1)' }}>
+                  <h3 style={{ margin: '0 0 16px 0', fontSize: 14, color: '#aaa' }}>🎡 公园门票设置</h3>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 32 }}>
+                      <div style={{ display: 'flex', gap: 8 }}>
+                          <button 
+                            onClick={() => useGameState.getState().setTicketMode('free')}
+                            style={{ padding: '8px 16px', borderRadius: 6, background: useGameState.getState().ticketMode === 'free' ? '#44BBA4' : '#333', cursor: 'pointer', border: 'none', color: useGameState.getState().ticketMode === 'free' ? '#111' : '#eee', fontWeight: 600 }}
+                          >
+                              免费入园
+                          </button>
+                          <button 
+                            onClick={() => useGameState.getState().setTicketMode('paid')}
+                            style={{ padding: '8px 16px', borderRadius: 6, background: useGameState.getState().ticketMode === 'paid' ? '#44BBA4' : '#333', cursor: 'pointer', border: 'none', color: useGameState.getState().ticketMode === 'paid' ? '#111' : '#eee', fontWeight: 600 }}
+                          >
+                              收费入园
+                          </button>
+                      </div>
+                      
+                      {useGameState.getState().ticketMode === 'paid' && (
+                          <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 16 }}>
+                              <span style={{ fontSize: 14 }}>价格: <strong style={{ color: '#F4A223' }}>${useGameState.getState().ticketPrice}</strong></span>
+                              <input 
+                                type="range" min="0" max="50" step="1"
+                                value={useGameState.getState().ticketPrice}
+                                onChange={(e) => useGameState.getState().setTicketPrice(Number(e.target.value))}
+                                style={{ flex: 1, accentColor: '#F4A223' }}
+                              />
+                              <span style={{ fontSize: 12, color: '#888' }}>(高价会减少入园人数)</span>
+                          </div>
+                      )}
+                  </div>
+               </div>
             </div>
           )}
         </div>

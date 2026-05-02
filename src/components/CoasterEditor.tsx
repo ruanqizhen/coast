@@ -290,7 +290,7 @@ export function CoasterEditor() {
                 cursor: canComplete ? 'pointer' : 'not-allowed',
                 opacity: canComplete ? 1 : 0.6
             }}>
-              <Check size={16} /> 完成轨道测试
+              <Check size={16} /> 完成
           </button>
       </div>
     </div>

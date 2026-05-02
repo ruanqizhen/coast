@@ -18,7 +18,7 @@ export const CONSTANTS = {
   STARTING_MONEY: 5000,
   MAX_LOAN: 5000,
   LOAN_MONTHLY_RATE: 0.015,  // 1.5%
-  DEFAULT_TICKET_PRICE: 0,   // Free entry by default
+  DEFAULT_TICKET_PRICE: 10,   // $10 entry by default
   TICKET_DEMAND_PENALTY: 0.08, // Per $10 increase → ~8% fewer visitors
   DEMOLISH_REFUND_RATE: 0.4,
   DEMOLISH_REFUND_RATE_FIRST_MONTH: 0.7,

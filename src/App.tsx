@@ -80,35 +80,52 @@ export function App() {
     
     workerRef.current.onmessage = (e) => {
       const { type, payload } = e.data;
+      const gState = useGameState.getState();
+      const pState = useParkState.getState();
       
       if (type === 'DAY_TICK') {
-        advanceDay();
+        gState.advanceDay();
       } else if (type === 'SIM_UPDATE') {
-        setVisitors(payload.visitors);
-        setStaff(payload.staff);
-        setVomitPoints(payload.vomitPoints);
-        setVisitorsCount(Object.keys(payload.visitors).length);
+        pState.setVisitors(payload.visitors);
+        pState.setStaff(payload.staff);
+        pState.setVomitPoints(payload.vomitPoints);
+        gState.setVisitorsCount(Object.keys(payload.visitors).length);
       } else if (type === 'WEATHER_UPDATE') {
-        setWeather(payload.current, payload.next);
+        gState.setWeather(payload.current, payload.next);
       } else if (type === 'RATING_UPDATE') {
-        setRating(payload);
+        gState.setRating(payload);
       } else if (type === 'ECONOMY_UPDATE') {
-        addMoney(payload.amount);
+        gState.addMoney(payload.amount);
       } else if (type === 'FACILITY_BREAKDOWN') {
          window.dispatchEvent(new CustomEvent('onFacilityUpdate', { detail: { id: payload, breakdown: true }}));
       } else if (type === 'FACILITY_FIXED') {
          window.dispatchEvent(new CustomEvent('onFacilityUpdate', { detail: { id: payload, breakdown: false }}));
       } else if (type === 'MESSAGE') {
-         useGameState.getState().addMessage(payload);
+         gState.addMessage(payload);
       } else if (type === 'STAR_UPDATE') {
-         useGameState.getState().setStars(payload);
+         gState.setStars(payload);
+      } else if (type === 'LOAN_UPDATE') {
+         gState.setLoan(payload);
       }
     };
+
+    workerRef.current.onerror = (err) => {
+      console.error("Simulation Worker Error:", err);
+      useGameState.getState().addMessage({
+        id: `err_${Date.now()}`,
+        text: "🚨 模拟引擎发生错误，正在尝试重新连接...",
+        priority: 'critical',
+        timestamp: Date.now()
+      });
+    };
+
+    // Explicitly start the simulation
+    workerRef.current.postMessage({ type: 'START' });
 
     return () => {
       workerRef.current?.terminate();
     };
-  }, []); // Note: we omit advanceDay from deps to prevent recreating worker
+  }, []); 
 
   // Setup event listener for facility updates to update zustand
   useEffect(() => {

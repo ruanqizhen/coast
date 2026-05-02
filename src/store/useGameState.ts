@@ -84,8 +84,8 @@ export const useGameState = create<GameState>((set, get) => ({
   weather: 'sunny',
   nextWeather: 'cloudy',
 
-  ticketMode: 'free',
-  ticketPrice: 0,
+  ticketMode: 'paid',
+  ticketPrice: 10,
   loan: createDefaultLoan(),
   currentMonthRevenue: 0,
   currentMonthExpenses: 0,

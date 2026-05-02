@@ -3,7 +3,7 @@ import { useGameState } from '../store/useGameState';
 import {
   DollarSign, Calendar, Star, Users, Pause, Play, FastForward,
   Sun, CloudRain, Cloud, CloudLightning, PartyPopper,
-  BarChart2, Beaker, Camera, Save, FolderOpen, Map, Landmark
+  BarChart2, Beaker, Camera, Save, FolderOpen, Map, Landmark, Settings
 } from 'lucide-react';
 import type { WeatherType } from '../types';
 import { DataDashboard } from './DataDashboard';
@@ -11,6 +11,7 @@ import { ResearchTechTree } from './ResearchTechTree';
 import { LoanPanel } from './LoanPanel';
 import { ExpansionPanel } from './ExpansionPanel';
 import { SaveLoadModal } from './SaveLoadModal';
+import { SettingsPanel } from './SettingsPanel';
 
 const WEATHER_CONFIG: Record<WeatherType, { icon: React.ReactNode; label: string; color: string }> = {
   sunny:      { icon: <Sun size={16} />,            label: '晴天', color: '#F4A223' },
@@ -23,6 +24,8 @@ const WEATHER_CONFIG: Record<WeatherType, { icon: React.ReactNode; label: string
 function renderStars(stars: number): string {
   return '★'.repeat(stars) + '☆'.repeat(Math.max(0, 5 - stars));
 }
+
+
 
 export function HUD() {
   const money = useGameState(state => state.money);
@@ -42,6 +45,7 @@ export function HUD() {
   const [showLoan, setShowLoan] = React.useState(false);
   const [showExpansion, setShowExpansion] = React.useState(false);
   const [showSaveModal, setShowSaveModal] = React.useState(false);
+  const [showSettings, setShowSettings] = React.useState(false);
 
   const weatherCfg = WEATHER_CONFIG[weather] || WEATHER_CONFIG.sunny;
   const nextWeatherCfg = WEATHER_CONFIG[nextWeather] || WEATHER_CONFIG.cloudy;
@@ -107,6 +111,10 @@ export function HUD() {
         <Map size={16} /> 扩地
       </button>
 
+      <button onClick={() => setShowSettings(true)} className="glass-pill hud-btn" style={{ background: '#546E7A' }}>
+        <Settings size={16} /> 设置
+      </button>
+
       <button onClick={takeScreenshot} className="glass-pill hud-btn" style={{ background: '#00897B' }}>
         <Camera size={16} /> 截图
       </button>
@@ -144,6 +152,7 @@ export function HUD() {
       {showLoan && <LoanPanel onClose={() => setShowLoan(false)} />}
       {showExpansion && <ExpansionPanel onClose={() => setShowExpansion(false)} />}
       {showSaveModal && <SaveLoadModal onClose={() => setShowSaveModal(false)} />}
+      {showSettings && <SettingsPanel onClose={() => setShowSettings(false)} />}
 
       <style>{`
         .hud-btn { cursor: pointer; transition: opacity 0.2s; }

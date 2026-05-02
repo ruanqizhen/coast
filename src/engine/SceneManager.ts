@@ -4,6 +4,7 @@ import { GridManager } from './GridManager';
 import { FacilityManager } from './FacilityManager';
 import { EntityManager } from './EntityManager';
 import { RoadRenderer } from './RoadRenderer';
+import { useParkState } from '../store/useParkState';
 
 export class SceneManager {
   private _canvas: HTMLCanvasElement;
@@ -80,6 +81,45 @@ export class SceneManager {
     window.addEventListener('resize', () => {
       this._engine.resize();
     });
+
+    // ── 3D Picking Logic ──
+    this.scene.onPointerDown = (evt, pickResult) => {
+        // Only pick if not in placement mode
+        const pState = useParkState.getState();
+        if (pState.placementMode || pState.coasterBuilderMode) return;
+
+        if (pickResult.hit && pickResult.pickedMesh) {
+            let mesh = pickResult.pickedMesh;
+            
+            // Find root or parent with ID
+            let targetId: string | null = null;
+            let current: any = mesh;
+            while (current) {
+                if (current.id && (current.id.startsWith('fac_') || current.id.startsWith('vis_'))) {
+                    targetId = current.id;
+                    break;
+                }
+                current = current.parent;
+            }
+
+            if (targetId) {
+                if (targetId.startsWith('fac_')) {
+                    pState.selectFacility(targetId);
+                    pState.selectVisitor(null);
+                } else if (targetId.startsWith('vis_')) {
+                    pState.selectVisitor(targetId);
+                    pState.selectFacility(null);
+                }
+            } else {
+                // Clicked ground or nothing
+                pState.selectFacility(null);
+                pState.selectVisitor(null);
+            }
+        } else {
+            pState.selectFacility(null);
+            pState.selectVisitor(null);
+        }
+    };
   }
 
   public dispose() {
