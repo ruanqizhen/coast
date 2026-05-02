@@ -233,7 +233,6 @@ export function BuildBar() {
         .build-card-name { font-size: 12px; font-weight: 500; text-align: center; line-height: 1.3; }
         .build-card-price { font-size: 12px; color: var(--money-color); display: flex; align-items: center; font-weight: 600; }
         .build-card-locked-text { font-size: 10px; color: #ff4444; text-align: center; }
-        @keyframes pulse { 0%{opacity:1} 50%{opacity:0.5} 100%{opacity:1} }
       `}</style>
     </div>
   );

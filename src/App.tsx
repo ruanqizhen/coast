@@ -10,6 +10,7 @@ import { MiniMap } from './components/MiniMap';
 import { FacilityInfoCard } from './components/FacilityInfoCard';
 import { VisitorInfoCard } from './components/VisitorInfoCard';
 import { TutorialOverlay } from './components/TutorialOverlay';
+import { TitleScreen } from './components/TitleScreen';
 import { saveManager } from './engine/SaveSystem';
 import { CONSTANTS } from './config/constants';
 import type { PlacedFacility, SaveData } from './types';
@@ -22,6 +23,9 @@ export function App() {
   const selectedFacilityId = useParkState(state => state.selectedFacilityId);
   const selectedVisitorId = useParkState(state => state.selectedVisitorId);
   const isSaving = useGameState(state => state.isSaving);
+  const [showTitle, setShowTitle] = useState(() => {
+    try { return localStorage.getItem('coast_returning') !== 'true'; } catch { return true; }
+  });
   const [showTutorial, setShowTutorial] = useState(() => {
     try { return localStorage.getItem('coast_tutorial_done') !== 'true'; } catch { return true; }
   });
@@ -109,6 +113,7 @@ export function App() {
          gState.addMessage(payload);
       } else if (type === 'STAR_UPDATE') {
          gState.setStars(payload);
+         window.dispatchEvent(new CustomEvent('onStarUp', { detail: payload }));
       } else if (type === 'LOAN_UPDATE') {
          gState.setLoan(payload);
       }
@@ -323,8 +328,14 @@ export function App() {
       {selectedFacilityId && <FacilityInfoCard />}
       {selectedVisitorId && <VisitorInfoCard />}
 
+      {/* Title screen */}
+      {showTitle && <TitleScreen onStart={() => {
+        try { localStorage.setItem('coast_returning', 'true'); } catch {}
+        setShowTitle(false);
+      }} />}
+
       {/* Tutorial overlay */}
-      {showTutorial && <TutorialOverlay onClose={() => setShowTutorial(false)} />}
+      {!showTitle && showTutorial && <TutorialOverlay onClose={() => setShowTutorial(false)} />}
 
       {/* Auto-save indicator */}
       {isSaving && (

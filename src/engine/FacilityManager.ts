@@ -1,4 +1,4 @@
-import { Scene, MeshBuilder, StandardMaterial, Color3, Vector3, TransformNode, Mesh, ShadowGenerator, CSG, Curve3, Path3D, Animation, ParticleSystem, DynamicTexture, Color4, Quaternion, ActionManager } from '@babylonjs/core';
+import { Scene, MeshBuilder, PBRMaterial, StandardMaterial, Color3, Vector3, TransformNode, Mesh, ShadowGenerator, CSG, Curve3, Path3D, Animation, ParticleSystem, DynamicTexture, Color4, Quaternion, ActionManager } from '@babylonjs/core';
 import { CONSTANTS } from '../config/constants';
 import { useParkState } from '../store/useParkState';
 import type { PlacedFacility, FacilityDef, CoasterTrackPiece } from '../types';
@@ -62,17 +62,12 @@ export class FacilityManager {
       mesh.receiveShadows = true;
   }
 
-  private getPBR(name: string, color: Color3, metallic: number = 0.1, roughness: number = 0.8): StandardMaterial {
-      void roughness; // Placeholder for future physical material upgrade
-      const mat = new StandardMaterial(name, this.scene);
-      mat.diffuseColor = color;
-      if (metallic > 0.5) {
-          mat.specularColor = new Color3(0.5, 0.5, 0.5);
-          mat.specularPower = 32;
-      } else {
-          mat.specularColor = new Color3(0.1, 0.1, 0.1);
-          mat.specularPower = 16;
-      }
+  private getPBR(name: string, color: Color3, metallic: number = 0.1, roughness: number = 0.8): PBRMaterial {
+      const mat = new PBRMaterial(name, this.scene);
+      mat.albedoColor = color;
+      mat.metallic = metallic;
+      mat.roughness = roughness;
+      mat.environmentIntensity = 0.4;
       return mat;
   }
 
@@ -268,7 +263,7 @@ export class FacilityManager {
           ps.minLifeTime = 0.5;
           ps.maxLifeTime = 1.2;
           ps.emitRate = 200;
-          ps.blendMode = ParticleSystem.BLENDMODE_STANDARD;
+          ps.blendMode = ParticleSystem.BLENDMODE_ADDITIVE;
 
           ps.gravity = new Vector3(0, -9.81, 0);
           ps.direction1 = new Vector3(-1, 5, 1);
@@ -280,8 +275,29 @@ export class FacilityManager {
           ps.updateSpeed = 0.01;
 
           ps.start();
-          
+
+          // Splash drops (second particle layer falling back down)
+          const ps2 = new ParticleSystem("dropParticles", 500, this.scene);
+          ps2.particleTexture = pt;
+          ps2.emitter = root as any;
+          ps2.minEmitBox = new Vector3(-0.5, 3.5, -0.5);
+          ps2.maxEmitBox = new Vector3(0.5, 4.0, 0.5);
+          ps2.color1 = new Color4(0.5, 0.7, 1.0, 0.8);
+          ps2.color2 = new Color4(0.3, 0.5, 1.0, 0.6);
+          ps2.colorDead = new Color4(0.1, 0.2, 0.5, 0.0);
+          ps2.minSize = 0.02; ps2.maxSize = 0.06;
+          ps2.minLifeTime = 0.3; ps2.maxLifeTime = 0.7;
+          ps2.emitRate = 100;
+          ps2.blendMode = ParticleSystem.BLENDMODE_ADDITIVE;
+          ps2.gravity = new Vector3(0, -15, 0);
+          ps2.direction1 = new Vector3(-0.5, -1, 0.5);
+          ps2.direction2 = new Vector3(0.5, -2, -0.5);
+          ps2.minEmitPower = 0.2; ps2.maxEmitPower = 0.8;
+          ps2.updateSpeed = 0.01;
+          ps2.start();
+
           (root as any)._particles = ps;
+          (root as any)._particles2 = ps2;
       }
   }
 
@@ -553,10 +569,12 @@ export class FacilityManager {
       const glass = MeshBuilder.CreateBox("glass", { width: w * 0.8, depth: 0.05, height: 1.2 }, this.scene);
       glass.position.y = 1.6;
       glass.position.z = -d / 2 + 0.1;
-      const glassMat = new StandardMaterial("glassMat", this.scene);
-      glassMat.diffuseColor = new Color3(0.5, 0.8, 1.0);
+      const glassMat = new PBRMaterial("glassMat", this.scene);
+      glassMat.albedoColor = new Color3(0.5, 0.8, 1.0);
       glassMat.alpha = 0.4;
-      glassMat.specularColor = new Color3(1, 1, 1);
+      glassMat.roughness = 0.1;
+      glassMat.metallic = 0.2;
+      glassMat.environmentIntensity = 0.8;
       glass.material = glassMat;
       glass.parent = parent;
 
@@ -883,8 +901,10 @@ export class FacilityManager {
           for (let i = 0; i < 4; i++) {
               const light = MeshBuilder.CreateSphere("glow", { diameter: 0.4 }, this.scene);
               light.position = new Vector3((i-1.5)*2, 4.5, -h/2 - 0.2);
-              const lightMat = new StandardMaterial("glowMat", this.scene);
+              const lightMat = new PBRMaterial("glowMat", this.scene);
+              lightMat.albedoColor = new Color3(0.1, 0.5, 0.2);
               lightMat.emissiveColor = new Color3(0.2, 1.0, 0.4);
+              lightMat.roughness = 0.3;
               light.material = lightMat;
               light.parent = parent;
           }
@@ -977,9 +997,10 @@ export class FacilityManager {
           mast.parent = parent;
 
           // Sail (flat box acting as canvas)
-          const sailMat = new StandardMaterial("sailMat", this.scene);
-          sailMat.diffuseColor = new Color3(0.1, 0.1, 0.1);
+          const sailMat = new PBRMaterial("sailMat", this.scene);
+          sailMat.albedoColor = new Color3(0.1, 0.1, 0.1);
           sailMat.alpha = 0.9;
+          sailMat.roughness = 0.85;
           const sail = MeshBuilder.CreateBox("sail", { width: 0.05, depth: 3, height: 2.5 }, this.scene);
           sail.position.y = 7;
           sail.material = sailMat;
@@ -1066,10 +1087,12 @@ export class FacilityManager {
       outer.dispose(); inner.dispose(); door.dispose(); winL.dispose(); winR.dispose();
 
       // ── Window glass panes ──
-      const glassMat = new StandardMaterial("winGlass", this.scene);
-      glassMat.diffuseColor = new Color3(0.6, 0.8, 0.95);
+      const glassMat = new PBRMaterial("winGlass", this.scene);
+      glassMat.albedoColor = new Color3(0.6, 0.8, 0.95);
       glassMat.alpha = 0.35;
-      glassMat.specularColor = new Color3(1, 1, 1);
+      glassMat.roughness = 0.1;
+      glassMat.metallic = 0.2;
+      glassMat.environmentIntensity = 0.8;
 
       for (const zOff of [d * 0.25, -d * 0.25]) {
           const glass = MeshBuilder.CreateBox("glass", { width: w * 0.88, depth: 0.04, height: 0.95 }, this.scene);
@@ -1313,6 +1336,9 @@ export class FacilityManager {
     if (mesh) {
       if ((mesh as any)._particles) {
           (mesh as any)._particles.dispose();
+      }
+      if ((mesh as any)._particles2) {
+          (mesh as any)._particles2.dispose();
       }
       mesh.dispose();
       this.meshes.delete(instanceId);

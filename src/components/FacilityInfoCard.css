@@ -4,6 +4,7 @@
   right: 24px;
   transform: translateY(-50%);
   width: 280px;
+  animation: anim-slideInRight 0.3s ease-out;
   background: rgba(18, 22, 32, 0.95);
   backdrop-filter: blur(12px);
   border: 1px solid rgba(255, 255, 255, 0.1);
@@ -90,13 +91,13 @@
 .fic-price-value {
   font-size: 18px;
   font-weight: 700;
-  color: #F4A223;
+  color: var(--money-color);
   min-width: 36px;
 }
 
 .fic-slider {
   flex: 1;
-  accent-color: #2E86AB;
+  accent-color: var(--primary-color);
 }
 
 .fic-actions {

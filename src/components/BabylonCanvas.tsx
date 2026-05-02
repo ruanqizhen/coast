@@ -4,6 +4,7 @@ import { Tools } from '@babylonjs/core/Misc/tools.js';
 import { useGameState } from '../store/useGameState';
 import { useParkState } from '../store/useParkState';
 import { FACILITIES } from '../config/facilities';
+import { CelebrationEffect } from '../engine/CelebrationEffect';
 import type { FacilityType, PlacedFacility } from '../types';
 
 export function BabylonCanvas() {
@@ -75,8 +76,15 @@ export function BabylonCanvas() {
     const handleBGMStop = () => managerRef.current?.soundManager.stopBGM();
     const handleSetAudioEnabled = (e: Event) => managerRef.current?.soundManager.setEnabled((e as CustomEvent).detail);
 
+    const handleStarUp = () => {
+      if (managerRef.current) {
+        const camTarget = managerRef.current.camera.target.clone();
+        CelebrationEffect.trigger(managerRef.current.scene, camTarget);
+      }
+    };
     window.addEventListener('onFacilityPlaced', handlePlacement);
     window.addEventListener('onTakeScreenshot', handleScreenshot);
+    window.addEventListener('onStarUp', handleStarUp);
     window.addEventListener('onPlayUIClick', handlePlayUIClick);
     window.addEventListener('onPlayPlaceSound', handlePlayPlace);
     window.addEventListener('onPlayDemolishSound', handlePlayDemolish);
@@ -95,6 +103,7 @@ export function BabylonCanvas() {
     return () => {
       window.removeEventListener('onFacilityPlaced', handlePlacement);
       window.removeEventListener('onTakeScreenshot', handleScreenshot);
+      window.removeEventListener('onStarUp', handleStarUp);
       window.removeEventListener('onPlayUIClick', handlePlayUIClick);
       window.removeEventListener('onPlayPlaceSound', handlePlayPlace);
       window.removeEventListener('onPlayDemolishSound', handlePlayDemolish);

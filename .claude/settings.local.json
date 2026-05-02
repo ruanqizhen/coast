@@ -1,7 +1,9 @@
 {
   "permissions": {
     "allow": [
-      "PowerShell($output = Get-Content \"C:\\\\Users\\\\ruanq\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--projects-coast\\\\1b3ef628-935d-48a7-b92d-f820667b0a4e\\\\tasks\\\\bdhgxfk58.output\" -Raw; $lines = $output -split \"`n\"; if \\($lines.Count -gt 3\\) { $lines | Select-Object -Last 5 } else { Write-Host \"Server running cleanly\" })"
+      "PowerShell($output = Get-Content \"C:\\\\Users\\\\ruanq\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--projects-coast\\\\1b3ef628-935d-48a7-b92d-f820667b0a4e\\\\tasks\\\\bdhgxfk58.output\" -Raw; $lines = $output -split \"`n\"; if \\($lines.Count -gt 3\\) { $lines | Select-Object -Last 5 } else { Write-Host \"Server running cleanly\" })",
+      "PowerShell(cd C:\\\\projects\\\\coast; npx tsc --noEmit 2>&1; \"Exit code: $LASTEXITCODE\")",
+      "PowerShell(cd C:\\\\projects\\\\coast; npx tsc --noEmit 2>&1; \"Exit: $LASTEXITCODE\")"
     ]
   }
 }

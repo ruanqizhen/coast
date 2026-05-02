@@ -1,4 +1,4 @@
-import { Engine, Scene, Vector3, HemisphericLight, ArcRotateCamera, DirectionalLight, Color3, Color4, ShadowGenerator } from '@babylonjs/core';
+import { Engine, Scene, Vector3, HemisphericLight, ArcRotateCamera, DirectionalLight, PointLight, Color3, Color4, ShadowGenerator, ParticleSystem, DynamicTexture } from '@babylonjs/core';
 import { CONSTANTS } from '../config/constants';
 import { GridManager } from './GridManager';
 import { FacilityManager } from './FacilityManager';
@@ -24,6 +24,8 @@ export class SceneManager {
   public sunLight: DirectionalLight;
   private _currentSimSpeed: number = 1;
   private _speedChangeHandler: ((e: Event) => void) | null = null;
+  private _nightLights: PointLight[] = [];
+  private _dustPS: ParticleSystem | null = null;
   private updateDayNight: () => void = () => {};
 
   constructor(canvas: HTMLCanvasElement) {
@@ -84,6 +86,12 @@ export class SceneManager {
     this.roadRenderer = new RoadRenderer(this.scene);
     this.soundManager = new SoundManager(this.scene);
 
+    // Distance fog for atmosphere
+    this.scene.fogMode = Scene.FOGMODE_LINEAR;
+    this.scene.fogStart = 80;
+    this.scene.fogEnd = 280;
+    this.scene.fogColor = new Color3(0.53, 0.81, 0.98);
+
     // Render loop
     this._engine.runRenderLoop(() => {
       this.updateDayNight();
@@ -120,21 +128,77 @@ export class SceneManager {
       );
 
       // Intensity: peaks at noon (t=0.5), dim at midnight (t=0,1)
-      // sin(t*PI) is 1 at t=0.5, 0 at t=0 and t=1
       const nightFactor = Math.sin(t * Math.PI);
       this.sunLight.intensity = 0.1 + nightFactor * 0.5;
-      this.scene.clearColor = new Color4(
-        0.05 + nightFactor * 0.48,
-        0.05 + nightFactor * 0.76,
-        0.1 + nightFactor * 0.88,
-        1.0
-      );
+      const skyR = 0.05 + nightFactor * 0.48;
+      const skyG = 0.05 + nightFactor * 0.76;
+      const skyB = 0.1 + nightFactor * 0.88;
+      this.scene.clearColor = new Color4(skyR, skyG, skyB, 1.0);
+      this.scene.fogColor = new Color3(skyR, skyG, skyB);
+      // Night lights: fade in when dark (nightFactor < 0.3)
+      const nightLightIntensity = Math.max(0, (0.3 - nightFactor) / 0.3) * 0.8;
+      for (const light of this._nightLights) {
+        light.intensity = nightLightIntensity;
+      }
+      // Dust more visible in daylight
+      if (this._dustPS) {
+        this._dustPS.color1 = new Color4(1, 1, 0.9, 0.04 + nightFactor * 0.1);
+        this._dustPS.color2 = new Color4(1, 1, 0.95, 0.03 + nightFactor * 0.06);
+      }
     };
 
     this._speedChangeHandler = (e: Event) => {
       this._currentSimSpeed = (e as CustomEvent).detail;
     };
     window.addEventListener('onSpeedChange', this._speedChangeHandler);
+
+    // ── Ambient Dust Particles ──
+    const dustTex = new DynamicTexture('dustTex', 32, this.scene, false);
+    const dctx = dustTex.getContext();
+    dctx.beginPath(); dctx.arc(16, 16, 14, 0, Math.PI * 2);
+    dctx.fillStyle = 'white'; dctx.fill();
+    dustTex.update();
+
+    const dustPS = new ParticleSystem('ambientDust', 300, this.scene);
+    dustPS.particleTexture = dustTex;
+    dustPS.emitter = new Vector3(gridCenter, 0, gridCenter);
+    dustPS.minEmitBox = new Vector3(-gridCenter * 0.5, 2, -gridCenter * 0.5);
+    dustPS.maxEmitBox = new Vector3(gridCenter * 0.5, 15, gridCenter * 0.5);
+    dustPS.color1 = new Color4(1, 1, 0.9, 0.12);
+    dustPS.color2 = new Color4(1, 1, 0.95, 0.08);
+    dustPS.colorDead = new Color4(1, 1, 1, 0);
+    dustPS.minSize = 0.02; dustPS.maxSize = 0.08;
+    dustPS.minLifeTime = 3; dustPS.maxLifeTime = 8;
+    dustPS.emitRate = 8;
+    dustPS.blendMode = ParticleSystem.BLENDMODE_ADDITIVE;
+    dustPS.gravity = new Vector3(0, -0.15, 0);
+    dustPS.direction1 = new Vector3(-0.1, 0.05, -0.1);
+    dustPS.direction2 = new Vector3(0.1, 0.15, 0.1);
+    dustPS.minEmitPower = 0.1; dustPS.maxEmitPower = 0.5;
+    dustPS.updateSpeed = 0.005;
+    dustPS.start();
+    this._dustPS = dustPS;
+
+    // ── Night Lighting ──
+    this._nightLights = [];
+    const gridCenterWorld = gridCenter;
+    // Place lights along a central path
+    for (let i = 1; i <= 5; i++) {
+      const lx = gridCenterWorld + (i - 3) * 15;
+      const light = new PointLight(`nightLight_${i}`, new Vector3(lx, 4, 20), this.scene);
+      light.diffuse = new Color3(1.0, 0.85, 0.55);
+      light.intensity = 0;
+      light.range = 25;
+      this._nightLights.push(light);
+    }
+    // Additional entrance lights
+    for (let i = 0; i < 3; i++) {
+      const light = new PointLight(`entryLight_${i}`, new Vector3(gridCenterWorld + (i - 1) * 10, 3, 6), this.scene);
+      light.diffuse = new Color3(1.0, 0.9, 0.7);
+      light.intensity = 0;
+      light.range = 18;
+      this._nightLights.push(light);
+    }
 
     // ── 3D Picking Logic ──
     this.scene.onPointerDown = (_evt, pickResult) => {

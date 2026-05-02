@@ -3,7 +3,7 @@
  * for both facility placement and road placement modes.
  */
 import {
-  Scene, MeshBuilder, StandardMaterial, Color3, Vector3, PointerEventTypes, Mesh
+  Scene, MeshBuilder, PBRMaterial, StandardMaterial, DynamicTexture, Color3, Color4, Vector3, PointerEventTypes, Mesh
 } from '@babylonjs/core';
 import { CONSTANTS } from '../config/constants';
 import { useParkState } from '../store/useParkState';
@@ -31,9 +31,35 @@ export class GridManager {
     }, scene);
     this.ground.position = new Vector3(size / 2, 0, size / 2);
 
-    const groundMat = new StandardMaterial('groundMat', scene);
-    groundMat.diffuseColor = Color3.FromHexString('#5aa832'); // Richer grass green
-    groundMat.specularColor = new Color3(0.05, 0.05, 0.05);
+    // Procedural grass texture
+    const texSize = 1024;
+    const grassTex = new DynamicTexture('grassTex', texSize, scene, false);
+    const ctx = grassTex.getContext();
+    // Base green
+    ctx.fillStyle = '#5aa832';
+    ctx.fillRect(0, 0, texSize, texSize);
+    // Variation patches
+    for (let i = 0; i < 6000; i++) {
+      const x = Math.random() * texSize;
+      const y = Math.random() * texSize;
+      const shade = Math.random();
+      const r = 70 + Math.floor(shade * 50);
+      const g = 150 + Math.floor(shade * 50);
+      const b = 30 + Math.floor(Math.random() * 40);
+      ctx.fillStyle = `rgb(${r},${g},${b})`;
+      ctx.fillRect(x, y, 4 + Math.random() * 6, 4 + Math.random() * 6);
+    }
+    // Small darker dots for depth
+    for (let i = 0; i < 2000; i++) {
+      ctx.fillStyle = `rgba(0,0,0,${0.03 + Math.random() * 0.06})`;
+      ctx.fillRect(Math.random() * texSize, Math.random() * texSize, 3, 3);
+    }
+    grassTex.update();
+
+    const groundMat = new PBRMaterial('groundMat', scene);
+    groundMat.albedoTexture = grassTex;
+    groundMat.roughness = 0.9;
+    groundMat.metallic = 0.0;
     this.ground.material = groundMat;
     this.ground.receiveShadows = true;
 
@@ -46,9 +72,11 @@ export class GridManager {
       depth: CONSTANTS.CELL_SIZE,
       height: 0.5,
     }, scene);
-    const pointerMat = new StandardMaterial('pointerMat', scene);
-    pointerMat.diffuseColor = new Color3(0, 1, 0);
+    const pointerMat = new PBRMaterial('pointerMat', scene);
+    pointerMat.albedoColor = new Color3(0, 1, 0);
     pointerMat.alpha = 0.4;
+    pointerMat.roughness = 0.3;
+    pointerMat.emissiveColor = new Color3(0, 0.5, 0);
     this.pointerBox.material = pointerMat;
     this.pointerBox.isVisible = false;
     this.pointerBox.isPickable = false;
@@ -190,8 +218,9 @@ export class GridManager {
             gridX + sizeX <= CONSTANTS.GRID_SIZE &&
             gridZ + sizeZ <= CONSTANTS.GRID_SIZE;
 
-          (this.pointerBox.material as StandardMaterial).diffuseColor =
-            isValid ? new Color3(0, 1, 0) : new Color3(1, 0, 0);
+          const pm = this.pointerBox.material as PBRMaterial;
+          pm.albedoColor = isValid ? new Color3(0, 1, 0) : new Color3(1, 0, 0);
+          pm.emissiveColor = isValid ? new Color3(0, 0.4, 0) : new Color3(0.4, 0, 0);
           break;
         }
 
@@ -223,8 +252,8 @@ export class GridManager {
           if (pointerInfo.event.button !== 0) break;
           if (!state.placementMode || !state.selectedFacilityToPlace || state.coasterBuilderMode) break;
 
-          const mat = this.pointerBox.material as StandardMaterial;
-          if (!this.pointerBox.isVisible || mat.diffuseColor.g !== 1) break;
+          const mat = this.pointerBox.material as PBRMaterial;
+          if (!this.pointerBox.isVisible || mat.albedoColor.g !== 1) break;
 
           const gp = getGroundPoint();
           if (!gp) break;

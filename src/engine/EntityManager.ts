@@ -1,4 +1,4 @@
-import { Scene, MeshBuilder, StandardMaterial, Color3, Vector3, Mesh, TransformNode } from '@babylonjs/core';
+import { Scene, MeshBuilder, PBRMaterial, Color3, Vector3, Mesh, TransformNode, Animation } from '@babylonjs/core';
 import { useParkState } from '../store/useParkState';
 import { ObjectPool } from './ObjectPool';
 import { LODManager } from './LODManager';
@@ -47,6 +47,7 @@ export class EntityManager {
 
   private visitorNodes: Record<string, TransformNode> = {};
   private visitorInstances: Record<string, Mesh> = {};
+  private visitorBobPhases: Record<string, number> = {};
   private staffNodes: Record<string, TransformNode> = {};
   private vomitMeshes: Record<string, Mesh> = {};
   private vomitPool: ObjectPool<Mesh>;
@@ -72,8 +73,9 @@ export class EntityManager {
     // Create visitor templates for instanced rendering
     this.createVisitorTemplates();
 
-    this.vomitMat = new StandardMaterial('vomMat', scene);
-    this.vomitMat.diffuseColor = new Color3(0.5, 0.6, 0.1);
+    this.vomitMat = new PBRMaterial('vomMat', scene);
+    this.vomitMat.albedoColor = new Color3(0.5, 0.6, 0.1);
+    this.vomitMat.roughness = 0.7; this.vomitMat.metallic = 0.1;
 
     // Object pool for vomit meshes (PRD §8.5)
     this.vomitPool = new ObjectPool<Mesh>(
@@ -89,15 +91,19 @@ export class EntityManager {
     );
 
     // Staff uniforms
-    this.cleanerShirtMat = new StandardMaterial('clnShirt', scene);
-    this.cleanerShirtMat.diffuseColor = new Color3(0.15, 0.65, 0.15);
-    this.cleanerPantsMat = new StandardMaterial('clnPants', scene);
-    this.cleanerPantsMat.diffuseColor = new Color3(0.15, 0.35, 0.15);
+    this.cleanerShirtMat = new PBRMaterial('clnShirt', scene);
+    this.cleanerShirtMat.albedoColor = new Color3(0.15, 0.65, 0.15);
+    this.cleanerShirtMat.roughness = 0.7;
+    this.cleanerPantsMat = new PBRMaterial('clnPants', scene);
+    this.cleanerPantsMat.albedoColor = new Color3(0.15, 0.35, 0.15);
+    this.cleanerPantsMat.roughness = 0.7;
 
-    this.mechanicShirtMat = new StandardMaterial('mecShirt', scene);
-    this.mechanicShirtMat.diffuseColor = new Color3(0.15, 0.25, 0.7);
-    this.mechanicPantsMat = new StandardMaterial('mecPants', scene);
-    this.mechanicPantsMat.diffuseColor = new Color3(0.12, 0.12, 0.4);
+    this.mechanicShirtMat = new PBRMaterial('mecShirt', scene);
+    this.mechanicShirtMat.albedoColor = new Color3(0.15, 0.25, 0.7);
+    this.mechanicShirtMat.roughness = 0.7;
+    this.mechanicPantsMat = new PBRMaterial('mecPants', scene);
+    this.mechanicPantsMat.albedoColor = new Color3(0.12, 0.12, 0.4);
+    this.mechanicPantsMat.roughness = 0.7;
 
     // Subscribe
     useParkState.subscribe((state) => {
@@ -158,26 +164,52 @@ export class EntityManager {
       const id = idPrefix || root.name;
       const s = scale;
 
-      const skinMat = new StandardMaterial(id + '_skin', this.scene);
-      skinMat.diffuseColor = skinColor;
-      skinMat.specularColor = new Color3(0.1, 0.1, 0.1);
+      const skinMat = new PBRMaterial(id + '_skin', this.scene);
+      skinMat.albedoColor = skinColor;
+      skinMat.roughness = 0.6; skinMat.metallic = 0.0;
 
-      const shirtMat = new StandardMaterial(id + '_shirt', this.scene);
-      shirtMat.diffuseColor = shirtColor;
-      shirtMat.specularColor = new Color3(0.05, 0.05, 0.05);
+      const shirtMat = new PBRMaterial(id + '_shirt', this.scene);
+      shirtMat.albedoColor = shirtColor;
+      shirtMat.roughness = 0.7; shirtMat.metallic = 0.05;
 
-      const pantsMat = new StandardMaterial(id + '_pants', this.scene);
-      pantsMat.diffuseColor = pantsColor;
-      const hairMat = new StandardMaterial(id + '_hair', this.scene);
-      hairMat.diffuseColor = hairColor;
-      const shoeMat = new StandardMaterial(id + '_shoe', this.scene);
-      shoeMat.diffuseColor = new Color3(0.1, 0.1, 0.1);
+      const pantsMat = new PBRMaterial(id + '_pants', this.scene);
+      pantsMat.albedoColor = pantsColor;
+      pantsMat.roughness = 0.7; shirtMat.metallic = 0.05;
+
+      const hairMat = new PBRMaterial(id + '_hair', this.scene);
+      hairMat.albedoColor = hairColor;
+      hairMat.roughness = 0.8; hairMat.metallic = 0.0;
+
+      const shoeMat = new PBRMaterial(id + '_shoe', this.scene);
+      shoeMat.albedoColor = new Color3(0.1, 0.1, 0.1);
+      shoeMat.roughness = 0.5; shoeMat.metallic = 0.1;
 
       // Head
       const headDiameter = isChild ? 0.6 * s : 0.45 * s;
       const head = MeshBuilder.CreateSphere(id + '_head', { diameter: headDiameter, segments: 10 }, this.scene);
       head.position.y = isChild ? 1.2 * s : 1.55 * s;
       head.material = skinMat; head.parent = root;
+
+      // Eyes (two white spheres + black pupils)
+      const eyeY = head.position.y + headDiameter * 0.1;
+      const eyeZ = headDiameter * 0.35;
+      const eyeSpacing = headDiameter * 0.2;
+      const eyeWhiteMat = new PBRMaterial(id + '_eyeW', this.scene);
+      eyeWhiteMat.albedoColor = new Color3(1, 1, 1);
+      eyeWhiteMat.roughness = 0.1; eyeWhiteMat.metallic = 0.0;
+      const eyePupilMat = new PBRMaterial(id + '_eyeP', this.scene);
+      eyePupilMat.albedoColor = new Color3(0.05, 0.05, 0.05);
+      eyePupilMat.roughness = 0.1;
+
+      for (const side of [-1, 1]) {
+        const eyeW = MeshBuilder.CreateSphere(id + '_eyeW' + side, { diameter: headDiameter * 0.22 }, this.scene);
+        eyeW.position = new Vector3(side * eyeSpacing, eyeY, eyeZ);
+        eyeW.material = eyeWhiteMat; eyeW.parent = root;
+
+        const pupil = MeshBuilder.CreateSphere(id + '_pupil' + side, { diameter: headDiameter * 0.1 }, this.scene);
+        pupil.position = new Vector3(side * eyeSpacing, eyeY, eyeZ + headDiameter * 0.08);
+        pupil.material = eyePupilMat; pupil.parent = root;
+      }
 
       // Hair
       const hair = MeshBuilder.CreateSphere(id + '_hair', { diameter: (headDiameter + 0.05), segments: 8 }, this.scene);
@@ -190,11 +222,12 @@ export class EntityManager {
           const hatHeight = staffType === 'entertainer' ? 0.3 * s : 0.15 * s;
           const hat = MeshBuilder.CreateCylinder(id + '_hat', { diameter: 0.35 * s, height: hatHeight, tessellation: 8 }, this.scene);
           hat.position.y = head.position.y + (hatHeight + headDiameter) / 2;
-          const hatMat = new StandardMaterial(id + '_hatMat', this.scene);
-          if (staffType === 'cleaner') hatMat.diffuseColor = new Color3(0.1, 0.4, 0.1);
-          else if (staffType === 'mechanic') hatMat.diffuseColor = new Color3(0.1, 0.1, 0.5);
-          else if (staffType === 'security') hatMat.diffuseColor = new Color3(0, 0, 0);
-          else if (staffType === 'entertainer') hatMat.diffuseColor = new Color3(0.8, 0.2, 0.8);
+          const hatMat = new PBRMaterial(id + '_hatMat', this.scene);
+          hatMat.roughness = 0.6; hatMat.metallic = 0.1;
+          if (staffType === 'cleaner') hatMat.albedoColor = new Color3(0.1, 0.4, 0.1);
+          else if (staffType === 'mechanic') hatMat.albedoColor = new Color3(0.1, 0.1, 0.5);
+          else if (staffType === 'security') hatMat.albedoColor = new Color3(0, 0, 0);
+          else if (staffType === 'entertainer') hatMat.albedoColor = new Color3(0.8, 0.2, 0.8);
           hat.material = hatMat; hat.parent = root;
           if (staffType !== 'entertainer') {
               const rim = MeshBuilder.CreateDisc(id + '_rim', { radius: 0.25 * s }, this.scene);
@@ -213,23 +246,26 @@ export class EntityManager {
       if (staffType === 'cleaner') {
           const vest = MeshBuilder.CreateCylinder(id + '_vest', { diameterTop: 0.36 * s, diameterBottom: 0.31 * s, height: 0.25 * s, tessellation: 10 }, this.scene);
           vest.position.y = torso.position.y;
-          const vestMat = new StandardMaterial(id + '_vestMat', this.scene);
-          vestMat.diffuseColor = new Color3(0.9, 0.9, 0.1);
+          const vestMat = new PBRMaterial(id + '_vestMat', this.scene);
+          vestMat.albedoColor = new Color3(0.9, 0.9, 0.1);
+          vestMat.roughness = 0.5; vestMat.metallic = 0.3;
           vest.material = vestMat; vest.parent = root;
       } else if (staffType === 'security') {
           const badge = MeshBuilder.CreateBox(id + '_badge', { size: 0.05 * s }, this.scene);
           badge.position.y = torso.position.y + 0.2 * s;
           badge.position.z = -0.16 * s;
-          const badgeMat = new StandardMaterial(id + '_badgeMat', this.scene);
-          badgeMat.diffuseColor = new Color3(0.9, 0.9, 0.9);
+          const badgeMat = new PBRMaterial(id + '_badgeMat', this.scene);
+          badgeMat.albedoColor = new Color3(0.9, 0.9, 0.9);
+          badgeMat.roughness = 0.3; badgeMat.metallic = 0.6;
           badge.material = badgeMat; badge.parent = root;
       } else if (staffType === 'entertainer') {
           for (let i = 0; i < 3; i++) {
               const dot = MeshBuilder.CreateSphere(id + '_dot' + i, { diameter: 0.06 * s }, this.scene);
               dot.position.y = torso.position.y + 0.1 * s - i * 0.1 * s;
               dot.position.z = -0.16 * s;
-              const dotMat = new StandardMaterial(id + '_dotMat' + i, this.scene);
-              dotMat.diffuseColor = i % 2 === 0 ? new Color3(1, 1, 0) : new Color3(0, 1, 1);
+              const dotMat = new PBRMaterial(id + '_dotMat' + i, this.scene);
+              dotMat.albedoColor = i % 2 === 0 ? new Color3(1, 1, 0) : new Color3(0, 1, 1);
+              dotMat.roughness = 0.3; dotMat.metallic = 0.5;
               dot.material = dotMat; dot.parent = root;
           }
       }
@@ -299,7 +335,10 @@ export class EntityManager {
           }
           const node = this.visitorInstances[id] || this.visitorNodes[id];
           if (node) {
-            node.position = new Vector3(v.pos.x, 0, v.pos.z);
+            // Walking bob animation
+            if (!this.visitorBobPhases[id]) this.visitorBobPhases[id] = Math.random() * Math.PI * 2;
+            const bobY = v.state === 'walking' ? Math.sin(Date.now() * 0.008 + this.visitorBobPhases[id]) * 0.06 : 0;
+            node.position = new Vector3(v.pos.x, bobY, v.pos.z);
             if (this.lodManager && !node.metadata?.lodTracked) {
               this.lodManager.track(id, node, 'visitor', () => ({ x: v.pos.x, z: v.pos.z }));
               node.metadata = { ...node.metadata, lodTracked: true };
@@ -313,6 +352,7 @@ export class EntityManager {
               if (this.lodManager) this.lodManager.untrack(id);
               this.visitorInstances[id].dispose();
               delete this.visitorInstances[id];
+              delete this.visitorBobPhases[id];
           }
       }
       for (const id in this.visitorNodes) {
@@ -320,6 +360,7 @@ export class EntityManager {
               if (this.lodManager) this.lodManager.untrack(id);
               this.visitorNodes[id].dispose();
               delete this.visitorNodes[id];
+              delete this.visitorBobPhases[id];
           }
       }
   }

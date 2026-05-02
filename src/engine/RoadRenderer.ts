@@ -3,7 +3,7 @@
  * Babylon.js meshes on the ground plane. Supports normal (grey) and wide (light grey)
  * road types. Staff-only roads are rendered differently.
  */
-import { Scene, MeshBuilder, StandardMaterial, Color3, Vector3, Mesh } from '@babylonjs/core';
+import { Scene, MeshBuilder, PBRMaterial, Color3, Vector3, Mesh } from '@babylonjs/core';
 import { CONSTANTS } from '../config/constants';
 import { useParkState } from '../store/useParkState';
 import type { RoadTile } from '../types';
@@ -11,24 +11,32 @@ import type { RoadTile } from '../types';
 export class RoadRenderer {
   private scene: Scene;
   private meshes: Map<string, Mesh> = new Map();
-  private matNormal: StandardMaterial;
-  private matWide: StandardMaterial;
-  private matStaff: StandardMaterial;
+  private markings: Map<string, Mesh> = new Map();
+  private matNormal: PBRMaterial;
+  private matWide: PBRMaterial;
+  private matStaff: PBRMaterial;
+  private matMarking: PBRMaterial;
+  private lineMeshes: Mesh[] = [];
 
   constructor(scene: Scene) {
     this.scene = scene;
 
-    this.matNormal = new StandardMaterial('road_normal', scene);
-    this.matNormal.diffuseColor = Color3.FromHexString('#888888');
-    this.matNormal.specularColor = new Color3(0.05, 0.05, 0.05);
+    this.matNormal = new PBRMaterial('road_normal', scene);
+    this.matNormal.albedoColor = Color3.FromHexString('#777777');
+    this.matNormal.roughness = 0.85; this.matNormal.metallic = 0.05;
 
-    this.matWide = new StandardMaterial('road_wide', scene);
-    this.matWide.diffuseColor = Color3.FromHexString('#AAAAAA');
-    this.matWide.specularColor = new Color3(0.05, 0.05, 0.05);
+    this.matWide = new PBRMaterial('road_wide', scene);
+    this.matWide.albedoColor = Color3.FromHexString('#999999');
+    this.matWide.roughness = 0.85; this.matWide.metallic = 0.05;
 
-    this.matStaff = new StandardMaterial('road_staff', scene);
-    this.matStaff.diffuseColor = Color3.FromHexString('#997755');
-    this.matStaff.specularColor = new Color3(0.05, 0.05, 0.05);
+    this.matStaff = new PBRMaterial('road_staff', scene);
+    this.matStaff.albedoColor = Color3.FromHexString('#997755');
+    this.matStaff.roughness = 0.9; this.matStaff.metallic = 0.02;
+
+    this.matMarking = new PBRMaterial('road_marking', scene);
+    this.matMarking.albedoColor = Color3.FromHexString('#DDDDDD');
+    this.matMarking.roughness = 0.7; this.matMarking.metallic = 0.05;
+    this.matMarking.emissiveColor = new Color3(0.05, 0.05, 0.05);
 
     // Subscribe to park state changes
     useParkState.subscribe((state, prevState) => {
@@ -70,6 +78,20 @@ export class RoadRenderer {
         }
 
         this.meshes.set(key, mesh);
+
+        // Add dashed center line for wide roads
+        if (tile.type === 'wide' && tile.x % 2 === 0) {
+          const markKey = `mark_${key}`;
+          if (!this.markings.has(markKey)) {
+            const mark = MeshBuilder.CreateBox(`roadmark_${key}`, {
+              width: 0.1, depth: 0.15, height: 0.02,
+            }, this.scene);
+            mark.position = new Vector3(cx, 0.08, cz);
+            mark.material = this.matMarking;
+            mark.isPickable = false;
+            this.markings.set(markKey, mark);
+          }
+        }
       }
     }
 
@@ -78,14 +100,19 @@ export class RoadRenderer {
       if (!seen.has(key)) {
         mesh.dispose();
         this.meshes.delete(key);
+        const markKey = `mark_${key}`;
+        if (this.markings.has(markKey)) {
+          this.markings.get(markKey)!.dispose();
+          this.markings.delete(markKey);
+        }
       }
     }
   }
 
   public dispose() {
-    for (const mesh of this.meshes.values()) {
-      mesh.dispose();
-    }
+    for (const mesh of this.meshes.values()) mesh.dispose();
+    for (const mark of this.markings.values()) mark.dispose();
     this.meshes.clear();
+    this.markings.clear();
   }
 }
