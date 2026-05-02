@@ -4,7 +4,7 @@
 > **Build → Attract → Optimize → Expand**
 
 
-![](image.png)
+![](cover.png)
 
 
 ---
