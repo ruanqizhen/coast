@@ -1,10 +1,10 @@
-import { useState } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { useParkState } from '../store/useParkState';
 import { useGameState } from '../store/useGameState';
 import { FACILITIES } from '../config/facilities';
 import type { FacilityType, Category } from '../types';
 import {
-  DollarSign, X, Lock,
+  DollarSign, X, Check, Lock,
   Zap, Ship, ArrowDownFromLine, Rocket,
   Disc3, Car, Ghost,
   Beef, CupSoda, UtensilsCrossed,
@@ -88,6 +88,20 @@ export function BuildBar() {
 
   const displayedFacilities = Object.values(FACILITIES).filter(f => f.category === activeTab);
 
+  // Track roads placed during this session for cancel support
+  const roadSessionRef = useRef<{ x: number; z: number }[]>([]);
+
+  const handleRoadPlaced = useCallback((e: Event) => {
+    const detail = (e as CustomEvent).detail;
+    roadSessionRef.current.push({ x: detail.x, z: detail.z });
+  }, []);
+
+  // Track road placement for session undo
+  useEffect(() => {
+    window.addEventListener('onRoadPlaced', handleRoadPlaced);
+    return () => window.removeEventListener('onRoadPlaced', handleRoadPlaced);
+  }, [handleRoadPlaced]);
+
   const handleSelect = (id: FacilityType | 'cleaner' | 'mechanic' | 'security' | 'entertainer', category: 'facility' | 'staff') => {
     if (id === 'coaster_basic' || id === 'launch_coaster') {
       clearCoasterPieces();
@@ -102,6 +116,7 @@ export function BuildBar() {
   if (placementMode && selectedFacilityToPlace) {
     let name = '';
     let cost: number | string = 0;
+    const isRoad = placementCategory === 'road';
     if (selectedFacilityToPlace === 'cleaner') { name = '清洁工'; cost = 100; }
     else if (selectedFacilityToPlace === 'mechanic') { name = '修理工'; cost = 150; }
     else if (selectedFacilityToPlace === 'security') { name = '保安'; cost = 120; }
@@ -115,16 +130,42 @@ export function BuildBar() {
       cost = d?.buildCost ?? 0;
     }
 
+    const handleRoadCancel = () => {
+      // Undo all roads placed this session
+      const roads = roadSessionRef.current;
+      if (roads.length > 0) {
+        window.dispatchEvent(new CustomEvent('onRoadSessionCancel', { detail: roads }));
+        roadSessionRef.current = [];
+      }
+      exitPlacementMode();
+    };
+
+    const handleRoadDone = () => {
+      roadSessionRef.current = [];
+      exitPlacementMode();
+    };
+
     return (
       <div className="hud-panel" style={{ padding: '16px 24px', display: 'flex', alignItems: 'center', gap: 24 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <div style={{ width: 12, height: 12, borderRadius: '50%', background: 'var(--success-color)', animation: 'pulse 1s infinite' }} />
+          <div style={{ width: 12, height: 12, borderRadius: '50%', background: 'var(--success-color)', animation: 'anim-pulse 1s infinite' }} />
           <span>正在选择地点: <strong>{name}</strong></span>
           <span style={{ color: 'var(--money-color)' }}>-${typeof cost === 'number' ? cost.toLocaleString() : cost}</span>
         </div>
-        <button onClick={exitPlacementMode} style={{ padding: '8px 16px', background: 'rgba(255,255,255,0.1)', borderRadius: 6, display: 'flex', alignItems: 'center', gap: 8 }}>
-          <X size={16} /> 取消建造 (右键)
-        </button>
+        {isRoad ? (
+          <>
+            <button onClick={handleRoadDone} style={{ padding: '8px 16px', background: '#44BBA4', borderRadius: 6, display: 'flex', alignItems: 'center', gap: 8, color: '#111', fontWeight: 600 }}>
+              <Check size={16} /> 完成
+            </button>
+            <button onClick={handleRoadCancel} style={{ padding: '8px 16px', background: 'rgba(232,72,85,0.15)', borderRadius: 6, display: 'flex', alignItems: 'center', gap: 8, color: '#E84855', border: '1px solid rgba(232,72,85,0.3)' }}>
+              <X size={16} /> 取消
+            </button>
+          </>
+        ) : (
+          <button onClick={exitPlacementMode} style={{ padding: '8px 16px', background: 'rgba(255,255,255,0.1)', borderRadius: 6, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <X size={16} /> 取消建造 (右键)
+          </button>
+        )}
       </div>
     );
   }

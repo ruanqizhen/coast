@@ -94,11 +94,11 @@ export function findCoasterClosurePath(
             for (const type of types) {
                 let nextH = current.h;
                 if (type === 'climb') nextH += 1;
-                else if (type === 'dive') nextH -= 1;
+                else if (type === 'dive') nextH = Math.max(0, nextH - 1);
                 else if (type === 'vertical_climb') nextH += 4;
-                else if (type === 'vertical_dive') nextH -= 4;
-                
-                if (nextH < 0 || nextH > 50) continue; // Increased height limit to 50 (100m)
+                else if (type === 'vertical_dive') nextH = Math.max(0, nextH - 4);
+
+                if (nextH < 0 || nextH > 50) continue;
 
                 // Penalize turning + climbing/diving at same time to make nicer tracks
                 let turnPenalty = (nextRot !== current.rot) ? 1 : 0;

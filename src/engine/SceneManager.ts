@@ -26,6 +26,11 @@ export class SceneManager {
   private _speedChangeHandler: ((e: Event) => void) | null = null;
   private _nightLights: PointLight[] = [];
   private _dustPS: ParticleSystem | null = null;
+  // Scratch objects to avoid per-frame allocations
+  private _scratchVec3 = new Vector3(0, 0, 0);
+  private _scratchColor3 = new Color3(0, 0, 0);
+  private _scratchColor4 = new Color4(0, 0, 0, 1);
+  private _scratchColor4b = new Color4(0, 0, 0, 1);
   private updateDayNight: () => void = () => {};
 
   constructor(canvas: HTMLCanvasElement) {
@@ -66,10 +71,10 @@ export class SceneManager {
     sun.position = new Vector3(100, 200, 100);
     this.sunLight = sun;
 
-    // Shadows
-    this.shadowGenerator = new ShadowGenerator(2048, sun);
-    this.shadowGenerator.useBlurExponentialShadowMap = true;
-    this.shadowGenerator.blurKernel = 32;
+    // Shadows: PCF soft shadows at 1024 — sufficient for top-down view
+    this.shadowGenerator = new ShadowGenerator(1024, sun);
+    this.shadowGenerator.useBlurExponentialShadowMap = false;
+    this.shadowGenerator.usePercentageCloserSoftShadows = true;
 
     // Default environment for PBR reflections
     this.scene.createDefaultEnvironment({
@@ -117,24 +122,25 @@ export class SceneManager {
 
     this.updateDayNight = () => {
       const t = dayFraction;
-      // t=0 (midnight), t=0.25 (dawn), t=0.5 (noon), t=0.75 (dusk)
       const sunAngle = (t - 0.25) * Math.PI * 2;
       const sunHeight = Math.sin(t * Math.PI * 2);
       const sunRadius = 250;
-      this.sunLight.position = new Vector3(
+      // Mutate scratch vector instead of allocating new Vector3
+      this.sunLight.position.copyFromFloats(
         Math.cos(sunAngle) * sunRadius,
         Math.max(10, sunHeight * sunRadius),
         Math.sin(sunAngle) * sunRadius * 0.5
       );
 
-      // Intensity: peaks at noon (t=0.5), dim at midnight (t=0,1)
       const nightFactor = Math.sin(t * Math.PI);
       this.sunLight.intensity = 0.1 + nightFactor * 0.5;
       const skyR = 0.05 + nightFactor * 0.48;
       const skyG = 0.05 + nightFactor * 0.76;
       const skyB = 0.1 + nightFactor * 0.88;
-      this.scene.clearColor = new Color4(skyR, skyG, skyB, 1.0);
-      this.scene.fogColor = new Color3(skyR, skyG, skyB);
+      this._scratchColor4.copyFromFloats(skyR, skyG, skyB, 1.0);
+      this.scene.clearColor = this._scratchColor4;
+      this._scratchColor3.copyFromFloats(skyR, skyG, skyB);
+      this.scene.fogColor = this._scratchColor3;
       // Night lights: fade in when dark (nightFactor < 0.3)
       const nightLightIntensity = Math.max(0, (0.3 - nightFactor) / 0.3) * 0.8;
       for (const light of this._nightLights) {
@@ -142,8 +148,8 @@ export class SceneManager {
       }
       // Dust more visible in daylight
       if (this._dustPS) {
-        this._dustPS.color1 = new Color4(1, 1, 0.9, 0.04 + nightFactor * 0.1);
-        this._dustPS.color2 = new Color4(1, 1, 0.95, 0.03 + nightFactor * 0.06);
+        this._dustPS.color1 = this._scratchColor4.copyFromFloats(1, 1, 0.9, 0.04 + nightFactor * 0.1);
+        this._dustPS.color2 = this._scratchColor4b.copyFromFloats(1, 1, 0.95, 0.03 + nightFactor * 0.06);
       }
     };
 

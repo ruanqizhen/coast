@@ -16,6 +16,8 @@ export class GridManager {
   private gridLines: Mesh[] = [];
 
   private isDraggingCoaster: boolean = false;
+  private isDraggingRoad: boolean = false;
+  private roadDragCells: Set<string> = new Set();
   private dragStartGrid: { x: number, z: number } | null = null;
 
   constructor(scene: Scene) {
@@ -165,7 +167,25 @@ export class GridManager {
       switch (evType) {
         case PointerEventTypes.POINTERMOVE: {
           const canvas = this.scene.getEngine().getRenderingCanvas();
-          
+
+          // Road drag painting
+          if (this.isDraggingRoad) {
+            const gp = getGroundPoint();
+            if (gp) {
+              const gridX = Math.floor(gp.x / CONSTANTS.CELL_SIZE);
+              const gridZ = Math.floor(gp.z / CONSTANTS.CELL_SIZE);
+              const key = `${gridX},${gridZ}`;
+              if (!this.roadDragCells.has(key)) {
+                this.roadDragCells.add(key);
+                window.dispatchEvent(new CustomEvent('onRoadPlaced', {
+                  detail: { type: state.selectedFacilityToPlace, x: gridX, z: gridZ }
+                }));
+              }
+            }
+            if (canvas) canvas.style.cursor = 'crosshair';
+            break;
+          }
+
           if (this.isDraggingCoaster && this.dragStartGrid) {
               if (canvas) canvas.style.cursor = 'move';
               const gp = getGroundPoint();
@@ -225,6 +245,24 @@ export class GridManager {
         }
 
         case PointerEventTypes.POINTERDOWN: {
+          // Start road drag painting
+          if (state.placementMode && state.placementCategory === 'road' && pointerInfo.event.button === 0) {
+            const gp = getGroundPoint();
+            if (gp) {
+              this.isDraggingRoad = true;
+              this.roadDragCells.clear();
+              const gridX = Math.floor(gp.x / CONSTANTS.CELL_SIZE);
+              const gridZ = Math.floor(gp.z / CONSTANTS.CELL_SIZE);
+              this.roadDragCells.add(`${gridX},${gridZ}`);
+              window.dispatchEvent(new CustomEvent('onRoadPlaced', {
+                detail: { type: state.selectedFacilityToPlace, x: gridX, z: gridZ }
+              }));
+              const canvas = this.scene.getEngine().getRenderingCanvas();
+              if (canvas) this.scene.activeCamera?.detachControl();
+              break;
+            }
+          }
+
           if (state.coasterBuilderMode && pointerInfo.event.button === 0) {
               const pickedMesh = pointerInfo.pickInfo?.pickedMesh;
               if (pickedMesh && (pickedMesh.name.startsWith('preview_coaster') || pickedMesh.parent?.name === 'preview_coaster')) {
@@ -242,8 +280,9 @@ export class GridManager {
               }
           }
 
-          // Right click → cancel
-          if (pointerInfo.event.button === 2 && state.placementMode) {
+          // Right click → cancel (not in coaster builder or road mode)
+          if (pointerInfo.event.button === 2 && state.placementMode &&
+              !state.coasterBuilderMode && state.placementCategory !== 'road') {
             useParkState.getState().exitPlacementMode();
             this.pointerBox.isVisible = false;
             break;
@@ -275,6 +314,15 @@ export class GridManager {
         }
 
         case PointerEventTypes.POINTERUP: {
+            if (this.isDraggingRoad) {
+              this.isDraggingRoad = false;
+              const canvas = this.scene.getEngine().getRenderingCanvas();
+              if (canvas) {
+                this.scene.activeCamera?.attachControl(canvas, true);
+                canvas.style.cursor = 'default';
+              }
+              break;
+            }
             if (this.isDraggingCoaster) {
                 this.isDraggingCoaster = false;
                 const offset = useParkState.getState().coasterDragOffset;

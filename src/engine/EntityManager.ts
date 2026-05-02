@@ -105,12 +105,22 @@ export class EntityManager {
     this.mechanicPantsMat.albedoColor = new Color3(0.12, 0.12, 0.4);
     this.mechanicPantsMat.roughness = 0.7;
 
-    // Subscribe
-    useParkState.subscribe((state) => {
-        this.updateVisitors(state.visitors);
-        this.updateStaff(state.staff);
-        this.updateVomitPoints(state.vomitPoints);
-    });
+    // Selective subscriptions: only react to changes in specific slices
+    useParkState.subscribe(
+      (state) => state.visitors,
+      (visitors) => { this.updateVisitors(visitors); },
+      { equalityFn: (a, b) => a === b }
+    );
+    useParkState.subscribe(
+      (state) => state.staff,
+      (staff) => { this.updateStaff(staff); },
+      { equalityFn: (a, b) => a === b }
+    );
+    useParkState.subscribe(
+      (state) => state.vomitPoints,
+      (vomitPoints) => { this.updateVomitPoints(vomitPoints); },
+      { equalityFn: (a, b) => a === b }
+    );
   }
 
   /**

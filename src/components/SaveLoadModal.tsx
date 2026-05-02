@@ -11,7 +11,7 @@ interface SaveLoadModalProps {
 
 export function SaveLoadModal({ onClose }: SaveLoadModalProps) {
   const [saves, setSaves] = useState<{ id: string; name: string; updatedAt: string }[]>([]);
-  const [newSaveName, setNewSaveName] = useState('My Coast Park');
+  const [newSaveName, setNewSaveName] = useState(useGameState.getState().parkName || '我的海岸公园');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const loadSaves = async () => {

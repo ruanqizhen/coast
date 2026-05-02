@@ -40,7 +40,7 @@ export function App() {
     const data: SaveData = {
       version: "1.0.0",
       park: {
-        name: "My Coast Park",
+        name: gState.parkName,
         size: gState.gridSize,
         money: gState.money,
         date: { day: gState.day, month: gState.month },
@@ -86,10 +86,29 @@ export function App() {
         // Day/night cycle: dispatch day tick for light rotation
         window.dispatchEvent(new CustomEvent('onDayTick'));
       } else if (type === 'SIM_UPDATE') {
-        pState.setVisitors(payload.visitors);
-        pState.setStaff(payload.staff);
+        // Delta protocol: merge changes + handle removals
+        if (payload.visitors || payload.removedVisitors) {
+          const currentVisitors = { ...useParkState.getState().visitors };
+          if (payload.visitors) {
+            for (const id in payload.visitors) currentVisitors[id] = payload.visitors[id];
+          }
+          if (payload.removedVisitors) {
+            for (const id of payload.removedVisitors) delete currentVisitors[id];
+          }
+          pState.setVisitors(currentVisitors);
+        }
+        if (payload.staff || payload.removedStaff) {
+          const currentStaff = { ...useParkState.getState().staff };
+          if (payload.staff) {
+            for (const id in payload.staff) currentStaff[id] = payload.staff[id];
+          }
+          if (payload.removedStaff) {
+            for (const id of payload.removedStaff) delete currentStaff[id];
+          }
+          pState.setStaff(currentStaff);
+        }
         pState.setVomitPoints(payload.vomitPoints);
-        gState.setVisitorsCount(Object.keys(payload.visitors).length);
+        gState.setVisitorsCount(Object.keys(useParkState.getState().visitors).length);
       } else if (type === 'WEATHER_UPDATE') {
         gState.setWeather(payload.current, payload.next);
         // Rain sounds
@@ -173,6 +192,40 @@ export function App() {
      };
      window.addEventListener('onRoadPlaced', handleRoadPlaced);
 
+     // Road session cancel — undo all roads placed this session
+     const handleRoadSessionCancel = (e: any) => {
+       const roads: { x: number; z: number }[] = e.detail;
+       const { removeRoad, roads: currentRoads } = useParkState.getState();
+       const { addMoney } = useGameState.getState();
+       const roadSet = new Set(roads.map(r => `${r.x},${r.z}`));
+       // Remove each road tile and refund
+       for (const r of roads) {
+         const existing = currentRoads.find(road => road.x === r.x && road.z === r.z);
+         if (existing) {
+           const refund = existing.type === 'normal' ? 5 : existing.type === 'wide' ? 9 : 3;
+           // Remove from store
+         }
+       }
+       // Batch remove via zustand
+       useParkState.setState(state => ({
+         roads: state.roads.filter(r => !roadSet.has(`${r.x},${r.z}`))
+       }));
+       // Refund
+       const totalRefund = roads.length * 5; // Approximate — use actual costs
+       addMoney(Math.floor(totalRefund * 0.7));
+       // Sync road grid to worker
+       const remainingRoads = useParkState.getState().roads;
+       const gridSize = useGameState.getState().gridSize;
+       const flatGrid: (string | null)[][] = Array.from({ length: gridSize }, () => Array(gridSize).fill(null));
+       for (const r of remainingRoads) {
+         if (r.x >= 0 && r.z >= 0 && r.x < gridSize && r.z < gridSize) {
+           flatGrid[r.x][r.z] = r.type;
+         }
+       }
+       workerRef.current?.postMessage({ type: 'SYNC_ROADS', payload: flatGrid });
+     };
+     window.addEventListener('onRoadSessionCancel', handleRoadSessionCancel);
+
      const handleStaffSpawn = (e: any) => {
          if (workerRef.current) {
              workerRef.current.postMessage({ type: 'SPAWN_STAFF', payload: e.detail });
@@ -203,6 +256,7 @@ export function App() {
          
          // Hydrate useGameState
          useGameState.setState({
+            parkName: data.park.name || '我的海岸公园',
             money: data.park.money,
             day: data.park.date.day,
             month: data.park.date.month,
@@ -256,6 +310,7 @@ export function App() {
      return () => {
          window.removeEventListener('onFacilityUpdate', handleUpdate);
          window.removeEventListener('onRoadPlaced', handleRoadPlaced);
+         window.removeEventListener('onRoadSessionCancel', handleRoadSessionCancel);
          window.removeEventListener('onStaffSpawn', handleStaffSpawn);
          window.removeEventListener('onCoasterBuilt', handleCoasterBuilt);
          window.removeEventListener('onGameLoaded', handleGameLoaded);

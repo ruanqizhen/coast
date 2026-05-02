@@ -70,18 +70,31 @@ export function CoasterEditor() {
       if (p.type === 'straight') { currentSpeed *= 0.95; }
   }
 
+  // Compute total height of track pieces (matching pathfinder model: no slope contribution)
+  const computeTrackHeight = (pieces: typeof currentCoasterPieces): number => {
+    let h = 0;
+    for (const p of pieces) {
+      if (p.type === 'climb') h += 1;
+      else if (p.type === 'dive') h = Math.max(0, h - 1);
+      else if (p.type === 'vertical_climb') h += 4;
+      else if (p.type === 'vertical_dive') h = Math.max(0, h - 4);
+    }
+    return h;
+  };
+
   const isLoopClosed = () => {
       if (currentCoasterPieces.length < 4) return false;
       const first = currentCoasterPieces[0];
       const last = currentCoasterPieces[currentCoasterPieces.length - 1];
-      
+
       // Calculate where the NEXT piece from last would be
       const rad = (last.rotation * Math.PI) / 180;
       const nx = last.x + Math.round(Math.sin(rad)) * 2;
       const nz = last.z + Math.round(Math.cos(rad)) * 2;
-      
-      // If next piece would land on first piece, or last is adjacent to first with correct rotation
-      return nx === first.x && nz === first.z;
+
+      // Must connect back to first piece position AND height must match (return to 0)
+      const totalHeight = computeTrackHeight(currentCoasterPieces);
+      return nx === first.x && nz === first.z && totalHeight === 0;
   };
 
   const handleComplete = () => {
@@ -99,26 +112,18 @@ export function CoasterEditor() {
 
   const handleAutoComplete = () => {
       if (currentCoasterPieces.length < 1) return;
-      
+
       const first = currentCoasterPieces[0];
       const last = currentCoasterPieces[currentCoasterPieces.length - 1];
 
-      let currentH = 0;
-      for (const p of currentCoasterPieces) {
-          const slopeRad = ((p.slopeAngle || 0) * Math.PI) / 180;
-          currentH += Math.tan(slopeRad); 
-          if (p.type === 'climb') currentH += 1;
-          if (p.type === 'dive') currentH -= 1;
-      }
-      // Round to nearest integer for pathfinder
-      currentH = Math.round(currentH);
+      const currentH = computeTrackHeight(currentCoasterPieces);
 
       const path = findCoasterClosurePath(
           last.x, last.z, currentH,
           first.x, first.z, 0, last.rotation
       );
 
-      if (path) {
+      if (path && path.length > 0) {
           const cost = path.length * 50;
           if (deductMoney(cost)) {
               let lx = last.x;
@@ -150,10 +155,10 @@ export function CoasterEditor() {
   const handleRandomBuild = () => {
       let attempts = 0;
       let success = false;
-      
-      while (attempts < 20 && !success) {
+
+      while (attempts < 50 && !success) {
           attempts++;
-          const numRandom = 8 + Math.floor(Math.random() * 8);
+          const numRandom = 6 + Math.floor(Math.random() * 8);
           let lx = CONSTANTS.GRID_SIZE / 2;
           let lz = CONSTANTS.GRID_SIZE / 2;
           let lRot = 0;
@@ -166,16 +171,26 @@ export function CoasterEditor() {
               let availableTypes: TrackPieceType[] = selectedFacilityToPlace === 'launch_coaster'
                 ? ['straight', 'climb', 'dive', 'loop', 'mega_loop', 'vertical_climb']
                 : ['straight', 'climb', 'dive', 'loop'];
-              
-              // Enforce 1-loop limit for basic coaster in random build
+
               if (selectedFacilityToPlace === 'coaster_basic') {
                   const currentLoops = newPieces.filter(p => p.type === 'loop').length;
-                  if (currentLoops >= 1) {
-                      availableTypes = availableTypes.filter(t => t !== 'loop');
-                  }
+                  if (currentLoops >= 1) availableTypes = availableTypes.filter(t => t !== 'loop');
               }
-              
-              const t = availableTypes[Math.floor(Math.random() * availableTypes.length)];
+
+              // Bias toward returning to height 0 as we approach the segment limit
+              const segmentsLeft = numRandom - i;
+              const needDescent = lH > segmentsLeft * 2; // We're too high, need to descend
+              const needAscent = lH < -segmentsLeft * 2;  // We're too low, need to climb
+
+              let t: TrackPieceType;
+              if (needDescent) {
+                t = Math.random() < 0.5 ? 'dive' : 'straight';
+              } else if (needAscent) {
+                t = Math.random() < 0.5 ? 'climb' : 'straight';
+              } else {
+                t = availableTypes[Math.floor(Math.random() * availableTypes.length)];
+              }
+
               const rotChange = (Math.floor(Math.random() * 3) - 1) * 90;
               const nextRot = (lRot + rotChange + 360) % 360;
               const s = (Math.floor(Math.random() * 3) - 1) * 15;
@@ -185,13 +200,14 @@ export function CoasterEditor() {
 
               if (nx < 4 || nz < 4 || nx > CONSTANTS.GRID_SIZE - 4 || nz > CONSTANTS.GRID_SIZE - 4) break;
 
-              const slopeRad = (s * Math.PI) / 180;
-              let nextH = lH + Math.tan(slopeRad);
-              if (t === 'climb') nextH++;
-              if (t === 'dive') nextH--;
-              if (t === 'vertical_climb') nextH += 4; // Matches +8m in FacilityManager
-              
-              if (nextH < 0 || nextH > 15) continue; // Safety: Ground/Height check
+              // Height computation matching pathfinder model (no slope contribution to height)
+              let nextH = lH;
+              if (t === 'climb') nextH += 1;
+              else if (t === 'dive') nextH -= 1;
+              else if (t === 'vertical_climb') nextH += 4;
+              else if (t === 'vertical_dive') nextH -= 4;
+
+              if (nextH < 0 || nextH > 20) continue; // Must stay above ground
 
               newPieces.push({ x: nx, z: nz, type: t, rotation: nextRot, slopeAngle: s });
               lx = nx; lz = nz; lRot = nextRot; lH = nextH;
@@ -199,27 +215,39 @@ export function CoasterEditor() {
 
           const targetH = Math.round(lH);
           const path = findCoasterClosurePath(lx, lz, targetH, newPieces[0].x, newPieces[0].z, 0, lRot);
-          
-          if (path) {
-              path.forEach(act => {
-                  const rad = (act.rotation * Math.PI) / 180;
-                  const nx = lx + Math.round(Math.sin(rad)) * 2;
-                  const nz = lz + Math.round(Math.cos(rad)) * 2;
-                  newPieces.push({ x: nx, z: nz, type: act.type, rotation: act.rotation, slopeAngle: act.slopeAngle });
-                  lx = nx; lz = nz;
-              });
 
-              const totalCost = newPieces.length * 50;
-              if (deductMoney(totalCost)) {
-                  clearCoasterPieces();
-                  addCoasterPieces(newPieces);
-                  success = true;
+          if (path && path.length > 0) {
+              const closurePieces: typeof currentCoasterPieces = [];
+              for (const act of path) {
+                  const aRad = (act.rotation * Math.PI) / 180;
+                  const nx = lx + Math.round(Math.sin(aRad)) * 2;
+                  const nz = lz + Math.round(Math.cos(aRad)) * 2;
+                  closurePieces.push({ x: nx, z: nz, type: act.type, rotation: act.rotation, slopeAngle: act.slopeAngle });
+                  lx = nx; lz = nz;
+              }
+
+              // Verify: after adding closure pieces, the last piece's next step should land on first
+              const allPieces = [...newPieces, ...closurePieces];
+              const lastAfter = allPieces[allPieces.length - 1];
+              const firstAfter = allPieces[0];
+              const finalRad = (lastAfter.rotation * Math.PI) / 180;
+              const finalNx = lastAfter.x + Math.round(Math.sin(finalRad)) * 2;
+              const finalNz = lastAfter.z + Math.round(Math.cos(finalRad)) * 2;
+              const finalHeight = computeTrackHeight(allPieces);
+
+              if (finalNx === firstAfter.x && finalNz === firstAfter.z && finalHeight === 0) {
+                  const totalCost = allPieces.length * 50;
+                  if (deductMoney(totalCost)) {
+                      clearCoasterPieces();
+                      addCoasterPieces(allPieces);
+                      success = true;
+                  }
               }
           }
       }
 
       if (!success) {
-          alert('生成失败，请尝试增加资金或再次点击！');
+          alert('自动生成失败，请重试或手动搭建！');
       }
   };
 
@@ -233,9 +261,8 @@ export function CoasterEditor() {
 
   return (
     <div className="hud-panel" style={{ width: 440, padding: 16, display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
          <h3 style={{ margin: 0, fontSize: 16 }}>过山车编辑器</h3>
-         <button onClick={cancel}><X size={16} /></button>
       </div>
 
       <div style={{ display: 'flex', gap: 16, borderBottom: '1px solid var(--panel-border)', paddingBottom: 16, alignItems: 'center' }}>
@@ -296,16 +323,22 @@ export function CoasterEditor() {
          )}
       </div>
 
-      <button onClick={handleRandomBuild} style={{ width: '100%', padding: '12px', background: 'linear-gradient(135deg, #FF6B6B, #7B61FF)', borderRadius: 8, color: 'white', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'center', border: 'none', cursor: 'pointer', boxShadow: '0 4px 15px rgba(123, 97, 255, 0.3)' }}>
-          <RefreshCcw size={18} /> 随机生成艺术过山车 (一键狂欢)
-      </button>
+      <div style={{ display: 'flex', gap: 8 }}>
+          <button onClick={handleRandomBuild} style={{
+              flex: 1, padding: 12,
+              background: 'linear-gradient(135deg, #FF6B6B, #7B61FF)', borderRadius: 6,
+              color: 'white', fontWeight: 600,
+              display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'center',
+              border: 'none', cursor: 'pointer',
+          }}>
+              <RefreshCcw size={16} /> 随机生成
+          </button>
 
-      <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-          <button 
-            onClick={handleAutoComplete} 
+          <button
+            onClick={handleAutoComplete}
             disabled={currentCoasterPieces.length < 1 || isLoopClosed()}
-            style={{ 
-                flex: 1, padding: 12, 
+            style={{
+                flex: 1, padding: 12,
                 background: (currentCoasterPieces.length > 0 && !isLoopClosed()) ? '#F4D03F' : '#333', color: '#111', fontWeight: 'bold',
                 borderRadius: 6, display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'center',
                 cursor: (currentCoasterPieces.length > 0 && !isLoopClosed()) ? 'pointer' : 'not-allowed',
@@ -313,13 +346,25 @@ export function CoasterEditor() {
             }}>
               <Wand2 size={16} /> 自动闭合
           </button>
-          
-          <button 
-            onClick={handleComplete} 
+      </div>
+
+      <div style={{ display: 'flex', gap: 8 }}>
+          <button onClick={cancel} style={{
+              flex: 1, padding: 12,
+              background: 'rgba(232,72,85,0.15)', color: '#E84855',
+              border: '1px solid rgba(232,72,85,0.3)', borderRadius: 6,
+              display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'center',
+              cursor: 'pointer', fontWeight: 600
+          }}>
+              <X size={16} /> 取消
+          </button>
+
+          <button
+            onClick={handleComplete}
             disabled={!canComplete}
-            style={{ 
-                flex: 1, padding: 12, 
-                background: canComplete ? '#44BBA4' : '#333', 
+            style={{
+                flex: 1, padding: 12,
+                background: canComplete ? '#44BBA4' : '#333',
                 borderRadius: 6, display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'center',
                 cursor: canComplete ? 'pointer' : 'not-allowed',
                 opacity: canComplete ? 1 : 0.6

@@ -52,6 +52,87 @@ let sceneryMaintenance: Record<string, number> = {}; // instanceId -> maintenanc
 // Vandalism tracking: timestamp when incident started
 let vandalismIncidents: Record<string, { startedAt: number; pos: { x: number; z: number }; securityAssigned: boolean }> = {};
 
+// Active timeouts per visitor for cleanup on removal
+let visitorTimeouts: Record<string, number[]> = {};
+
+// Track removed visitor IDs for delta sync
+let removedVisitors: string[] = [];
+let removedStaff: string[] = [];
+let newVisitorIds: Set<string> = new Set();
+
+function addVisitorTimeout(vId: string, ms: number, fn: () => void) {
+  const timeoutId = self.setTimeout(() => {
+    fn();
+    if (visitorTimeouts[vId]) {
+      visitorTimeouts[vId] = visitorTimeouts[vId].filter(id => id !== timeoutId);
+    }
+  }, ms);
+  if (!visitorTimeouts[vId]) visitorTimeouts[vId] = [];
+  visitorTimeouts[vId].push(timeoutId);
+  return timeoutId;
+}
+
+function clearVisitorTimeouts(vId: string) {
+  if (visitorTimeouts[vId]) {
+    for (const id of visitorTimeouts[vId]) self.clearTimeout(id);
+    delete visitorTimeouts[vId];
+  }
+}
+
+// Spatial index for fast proximity queries
+const SPATIAL_CELL = 6; // Cell size in world units
+let spatialStaff: Record<string, Staff[]> = {};
+let spatialScenery: Record<string, PlacedFacility[]> = {};
+
+function getSpatialKey(x: number, z: number): string {
+  return `${Math.floor(x / SPATIAL_CELL)},${Math.floor(z / SPATIAL_CELL)}`;
+}
+
+function rebuildSpatialIndex() {
+  spatialStaff = {};
+  for (const s of Object.values(staff)) {
+    const key = getSpatialKey(s.pos.x, s.pos.z);
+    if (!spatialStaff[key]) spatialStaff[key] = [];
+    spatialStaff[key].push(s);
+  }
+  spatialScenery = {};
+  for (const fac of facilities) {
+    if (FACILITIES[fac.typeId]?.category === 'scenery') {
+      const fx = fac.x * CONSTANTS.CELL_SIZE + (FACILITIES[fac.typeId]?.sizeX || 1) * CONSTANTS.CELL_SIZE / 2;
+      const fz = fac.z * CONSTANTS.CELL_SIZE + (FACILITIES[fac.typeId]?.sizeZ || 1) * CONSTANTS.CELL_SIZE / 2;
+      const key = getSpatialKey(fx, fz);
+      if (!spatialScenery[key]) spatialScenery[key] = [];
+      spatialScenery[key].push(fac);
+    }
+  }
+}
+
+function getNearbyStaff(vx: number, vz: number): Staff[] {
+  const results: Staff[] = [];
+  const cx = Math.floor(vx / SPATIAL_CELL);
+  const cz = Math.floor(vz / SPATIAL_CELL);
+  for (let dx = -1; dx <= 1; dx++) {
+    for (let dz = -1; dz <= 1; dz++) {
+      const key = `${cx + dx},${cz + dz}`;
+      if (spatialStaff[key]) results.push(...spatialStaff[key]);
+    }
+  }
+  return results;
+}
+
+function getNearbyScenery(vx: number, vz: number): PlacedFacility[] {
+  const results: PlacedFacility[] = [];
+  const cx = Math.floor(vx / SPATIAL_CELL);
+  const cz = Math.floor(vz / SPATIAL_CELL);
+  for (let dx = -1; dx <= 1; dx++) {
+    for (let dz = -1; dz <= 1; dz++) {
+      const key = `${cx + dx},${cz + dz}`;
+      if (spatialScenery[key]) results.push(...spatialScenery[key]);
+    }
+  }
+  return results;
+}
+
 // Road congestion: count visitors per grid cell
 let congestionMap: Record<string, number> = {};
 let lastCongestionUpdate = 0;
@@ -168,11 +249,29 @@ function startLoops() {
   }
   if (simInterval === null) {
     simInterval = self.setInterval(() => {
-      simulateFrame();
+      const dirtyVisitors: Record<string, Visitor> = {};
+      const dirtyStaff: Record<string, Staff> = {};
+      simulateFrame(dirtyVisitors, dirtyStaff);
+      // Mark newly created visitors as dirty
+      for (const nvId of newVisitorIds) {
+        if (visitors[nvId]) dirtyVisitors[nvId] = visitors[nvId];
+      }
+      newVisitorIds.clear();
+      // Delta protocol: only send entities that changed this frame
       self.postMessage({
         type: 'SIM_UPDATE',
-        payload: { visitors, staff, vomitPoints, trashPoints }
+        payload: {
+          visitors: Object.keys(dirtyVisitors).length > 0 ? dirtyVisitors : undefined,
+          staff: Object.keys(dirtyStaff).length > 0 ? dirtyStaff : undefined,
+          vomitPoints,
+          trashPoints,
+          removedVisitors: removedVisitors.length > 0 ? [...removedVisitors] : undefined,
+          removedStaff: removedStaff.length > 0 ? [...removedStaff] : undefined,
+          fullSync: false
+        }
       });
+      removedVisitors.length = 0;
+      removedStaff.length = 0;
     }, (1000 / SIM_FPS) / currentSpeed);
   }
 }
@@ -284,6 +383,7 @@ function createVisitor() {
     enteredOnDay: currentDay,
     lastDecisionTime: Date.now(),
   };
+  newVisitorIds.add(vId);
 }
 
 // ═══════════════════════════════════
@@ -540,10 +640,19 @@ function applyIntelligentPricing() {
 // ═══════════════════════════════════
 // Frame Simulation (10 FPS)
 // ═══════════════════════════════════
-function simulateFrame() {
-  const dt = 0.1 / currentSpeed; // seconds per sim frame
-  simulateVisitors(dt);
-  simulateStaff(dt);
+let lastSpatialRebuild = 0;
+
+function simulateFrame(
+  dirtyVisitors?: Record<string, Visitor>,
+  dirtyStaff?: Record<string, Staff>
+) {
+  const dt = 0.1 / currentSpeed;
+  if (Date.now() - lastSpatialRebuild > 2000) {
+    rebuildSpatialIndex();
+    lastSpatialRebuild = Date.now();
+  }
+  simulateVisitors(dt, dirtyVisitors);
+  simulateStaff(dt, dirtyStaff);
   checkVandalismConsequences();
   updateCongestionMap();
 }
@@ -551,12 +660,15 @@ function simulateFrame() {
 // ═══════════════════════════════════
 // Visitor Simulation (PRD §5.2)
 // ═══════════════════════════════════
-function simulateVisitors(dt: number) {
+function simulateVisitors(dt: number, dirtyVisitors?: Record<string, Visitor>) {
   const speed = 2.0;
   const now = Date.now();
 
   for (const vId in visitors) {
     const v = visitors[vId];
+    const prevState = v.state;
+    const prevX = v.pos.x;
+    const prevZ = v.pos.z;
 
     // ── Needs decay ──
     v.needs.hunger = Math.max(0, v.needs.hunger - CONSTANTS.NEEDS.HUNGER_DECAY * dt);
@@ -565,8 +677,9 @@ function simulateVisitors(dt: number) {
     v.needs.fatigue = Math.min(100, v.needs.fatigue + CONSTANTS.NEEDS.FATIGUE_DECAY * dt);
     v.needs.fun = Math.max(0, v.needs.fun - CONSTANTS.NEEDS.FUN_DECAY * dt);
 
-    // ── Entertainer buff ──
-    for (const s of Object.values(staff)) {
+    // ── Entertainer buff (spatial index) ──
+    const nearbyStaff = getNearbyStaff(v.pos.x, v.pos.z);
+    for (const s of nearbyStaff) {
       if (s.type === 'entertainer' && s.energy > 10) {
         const dx = s.pos.x - v.pos.x;
         const dz = s.pos.z - v.pos.z;
@@ -590,8 +703,8 @@ function simulateVisitors(dt: number) {
       }
     }
 
-    // ── Scenery proximity boost (PRD §5.1.3) ──
-    for (const fac of facilities) {
+    // ── Scenery proximity boost (spatial index) ──
+    for (const fac of getNearbyScenery(v.pos.x, v.pos.z)) {
       const def = FACILITIES[fac.typeId];
       if (def?.category === 'scenery') {
         const dx = fac.x * CONSTANTS.CELL_SIZE - v.pos.x;
@@ -615,7 +728,9 @@ function simulateVisitors(dt: number) {
         vomitPoints[pId] = { id: pId, pos: { ...v.pos } };
         v.needs.nausea = Math.max(0, v.needs.nausea - 30);
         v.satisfaction -= 10;
-        setTimeout(() => { if (visitors[vId]) visitors[vId].state = 'idle'; }, 3000);
+        addVisitorTimeout(vId, Math.max(500, 3000 / currentSpeed), () => {
+          if (visitors[vId]) visitors[vId].state = 'idle';
+        });
         continue;
       }
     }
@@ -690,6 +805,8 @@ function simulateVisitors(dt: number) {
         const dz = entrance.z - v.pos.z;
         const dist = Math.sqrt(dx * dx + dz * dz);
         if (dist < speed) {
+          clearVisitorTimeouts(vId);
+          removedVisitors.push(vId);
           delete visitors[vId];
         } else {
           v.pos.x += (dx / dist) * speed;
@@ -698,8 +815,20 @@ function simulateVisitors(dt: number) {
         break;
       }
     }
+
+    // Mark dirty if state or position changed
+    if (dirtyVisitors && visitors[vId] &&
+        (v.state !== prevState || v.pos.x !== prevX || v.pos.z !== prevZ)) {
+      dirtyVisitors[vId] = v;
+    }
   }
 }
+
+// ── stale visitor cleanup (removals are not dirty, they're deletions) ──
+
+// ═══════════════════════════════════
+// Visitor Decision (PRD §5.2.4)
+// ═══════════════════════════════════
 
 // ═══════════════════════════════════
 // Visitor Decision (PRD §5.2.4)
@@ -998,12 +1127,12 @@ function arriveAtTarget(v: Visitor) {
       } else {
         duration = def.rideDuration || 15000;
       }
-      setTimeout(() => {
+      addVisitorTimeout(v.id, Math.min(duration / currentSpeed, 5000), () => {
         if (visitors[v.id]) {
           visitors[v.id].state = 'idle';
           visitors[v.id].targetFacilityId = null;
         }
-      }, Math.min(duration / currentSpeed, 5000));
+      });
     }, waitMs / currentSpeed);
 
   } else if (def.category === 'shop') {
@@ -1025,12 +1154,12 @@ function arriveAtTarget(v: Visitor) {
       v.needs.thirst = Math.min(100, v.needs.thirst + 30);
     }
 
-    setTimeout(() => {
+    addVisitorTimeout(v.id, 3000 / currentSpeed, () => {
       if (visitors[v.id]) {
         visitors[v.id].state = 'idle';
         visitors[v.id].targetFacilityId = null;
       }
-    }, 3000 / currentSpeed);
+    });
 
   } else if (fac.typeId === 'restroom') {
     v.needs.toilet = 0;

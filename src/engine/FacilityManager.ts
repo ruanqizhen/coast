@@ -333,9 +333,11 @@ export class FacilityManager {
           if (piece.type === 'climb') {
               currentHeight += 2;
           } else if (piece.type === 'dive') {
-              currentHeight -= 2;
+              currentHeight = Math.max(0.5, currentHeight - 2);
           } else if (piece.type === 'vertical_climb') {
               currentHeight += 8; // High vertical change
+          } else if (piece.type === 'vertical_dive') {
+              currentHeight = Math.max(0.5, currentHeight - 8);
           }
           
           let px = piece.x * CONSTANTS.CELL_SIZE;

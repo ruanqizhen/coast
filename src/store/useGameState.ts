@@ -10,6 +10,7 @@ interface GameState {
   month: number;
   rating: number;
   stars: number;
+  parkName: string;
   visitorsCount: number;
   speed: number;
   gamePaused: boolean;
@@ -47,6 +48,7 @@ interface GameState {
   togglePause: () => void;
   setRating: (rating: number) => void;
   setStars: (stars: number) => void;
+  setParkName: (name: string) => void;
   setWeather: (weather: WeatherType, next?: WeatherType) => void;
   setVisitorsCount: (count: number) => void;
   setResearchBudget: (amount: number) => void;
@@ -80,6 +82,7 @@ export const useGameState = create<GameState>((set, get) => ({
   stars: IS_DEBUG ? 5 : 0,
   rating: 50,
   visitorsCount: 0,
+  parkName: '我的海岸公园',
   speed: 1,
   gamePaused: false,
   weather: 'sunny',
@@ -160,6 +163,7 @@ export const useGameState = create<GameState>((set, get) => ({
   togglePause: () => set((state) => ({ gamePaused: !state.gamePaused })),
   setRating: (rating) => set({ rating }),
   setStars: (stars) => set({ stars }),
+  setParkName: (parkName) => set({ parkName }),
   setWeather: (weather, next) => set(next ? { weather, nextWeather: next } : { weather }),
   setVisitorsCount: (count) => set({ visitorsCount: count }),
   setResearchBudget: (amount) => set({ monthlyResearchBudget: amount }),
