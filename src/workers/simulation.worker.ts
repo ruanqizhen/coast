@@ -132,8 +132,22 @@ function getNearbyScenery(vx: number, vz: number): PlacedFacility[] {
   return results;
 }
 
+// Scenario state
+let activeScenario: { winStars: number; winVisitors: number; winDay?: number; winMoney?: number } | null = null;
+
 // Achievement tracking
 let achievements: Record<string, boolean> = {};
+
+function checkScenarioWin() {
+  if (!activeScenario) return;
+  const vCount = Object.keys(visitors).length;
+  const sc = activeScenario;
+  if (stars >= sc.winStars && vCount >= sc.winVisitors) {
+    if (sc.winDay && currentDay > sc.winDay) return;
+    self.postMessage({ type: 'SCENARIO_WIN', payload: { id: 'scenario_win' } });
+    activeScenario = null; // Only fire once
+  }
+}
 
 function checkAchievements() {
   const vCount = Object.keys(visitors).length;
@@ -210,6 +224,9 @@ self.onmessage = (e) => {
     case 'SYNC_ROADS':
       roadGrid = payload;
       weightGrid = buildWeightGrid(roadGrid, false);
+      break;
+    case 'SET_SCENARIO':
+      activeScenario = payload;
       break;
     case 'SYNC_SETTINGS':
       if (payload.ticketMode !== undefined) ticketMode = payload.ticketMode;
@@ -315,6 +332,7 @@ function simulateDayTick() {
   updateWeather();
   updateFacilityAging();
   checkAchievements();
+  checkScenarioWin();
   checkBreakdowns();
   updateSatisfaction();
   updateStarRating();
@@ -1514,9 +1532,9 @@ function updateCongestionMap() {
     const key = `${gx},${gz}`;
     congestionMap[key] = (congestionMap[key] || 0) + 1;
   }
-  // Rebuild weight grid with congestion data every ~2 seconds
+  // Rebuild weight grid with congestion data every ~5 seconds
   const now = Date.now();
-  if (now - lastCongestionUpdate > 2000) {
+  if (now - lastCongestionUpdate > 5000) {
     lastCongestionUpdate = now;
     weightGrid = buildWeightGrid(roadGrid, false, congestionMap);
   }

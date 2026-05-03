@@ -64,7 +64,7 @@ export class EntityManager {
 
     this.vomitMat = new PBRMaterial('vomMat', scene);
     this.vomitMat.albedoColor = new Color3(0.5, 0.6, 0.1);
-    this.vomitMat.roughness = 0.7; this.vomitMat.metallic = 0.1;
+    this.vomitMat.roughness = 0.7; this.vomitMat.metallic = 0.1; this.vomitMat.environmentIntensity = 0.05;
 
     // Object pool for vomit meshes (PRD §8.5)
     this.vomitPool = new ObjectPool<Mesh>(
@@ -79,12 +79,37 @@ export class EntityManager {
       200
     );
 
-    // Subscribe to state changes
+    // Subscribe: only react when specific slices change
+    let prevVisitors: any = null;
+    let prevStaff: any = null;
+    let prevVomit: any = null;
     useParkState.subscribe((state) => {
-      this.updateVisitors(state.visitors);
-      this.updateStaff(state.staff);
-      this.updateVomitPoints(state.vomitPoints);
+      if (state.visitors !== prevVisitors) {
+        prevVisitors = state.visitors;
+        this.updateVisitors(state.visitors);
+      }
+      if (state.staff !== prevStaff) {
+        prevStaff = state.staff;
+        this.updateStaff(state.staff);
+      }
+      if (state.vomitPoints !== prevVomit) {
+        prevVomit = state.vomitPoints;
+        this.updateVomitPoints(state.vomitPoints);
+      }
     });
+  }
+
+  // Shared material cache to avoid per-entity material creation
+  private sharedMaterials: Map<string, PBRMaterial> = new Map();
+  private getSharedMat(key: string, color: Color3, roughness: number, metallic: number): PBRMaterial {
+    if (this.sharedMaterials.has(key)) return this.sharedMaterials.get(key)!;
+    const mat = new PBRMaterial(key, this.scene);
+    mat.albedoColor = color;
+    mat.roughness = roughness;
+    mat.metallic = metallic;
+    mat.environmentIntensity = 0.05;
+    this.sharedMaterials.set(key, mat);
+    return mat;
   }
 
   /** Build humanoid body parts parented under the given root node */
@@ -102,25 +127,17 @@ export class EntityManager {
       const id = idPrefix || root.name;
       const s = scale;
 
-      const skinMat = new PBRMaterial(id + '_skin', this.scene);
-      skinMat.albedoColor = skinColor;
-      skinMat.roughness = 0.6; skinMat.metallic = 0.0;
+      // Use shared materials keyed by color+roughness to reduce GPU state changes
+      const skinKey = `skin_${skinColor.r}_${skinColor.g}_${skinColor.b}`;
+      const shirtKey = `shirt_${shirtColor.r}_${shirtColor.g}_${shirtColor.b}`;
+      const pantsKey = `pants_${pantsColor.r}_${pantsColor.g}_${pantsColor.b}`;
+      const hairKey = `hair_${hairColor.r}_${hairColor.g}_${hairColor.b}`;
 
-      const shirtMat = new PBRMaterial(id + '_shirt', this.scene);
-      shirtMat.albedoColor = shirtColor;
-      shirtMat.roughness = 0.7; shirtMat.metallic = 0.05;
-
-      const pantsMat = new PBRMaterial(id + '_pants', this.scene);
-      pantsMat.albedoColor = pantsColor;
-      pantsMat.roughness = 0.7; shirtMat.metallic = 0.05;
-
-      const hairMat = new PBRMaterial(id + '_hair', this.scene);
-      hairMat.albedoColor = hairColor;
-      hairMat.roughness = 0.8; hairMat.metallic = 0.0;
-
-      const shoeMat = new PBRMaterial(id + '_shoe', this.scene);
-      shoeMat.albedoColor = new Color3(0.1, 0.1, 0.1);
-      shoeMat.roughness = 0.5; shoeMat.metallic = 0.1;
+      const skinMat = this.getSharedMat(skinKey, skinColor, 0.6, 0.0);
+      const shirtMat = this.getSharedMat(shirtKey, shirtColor, 0.7, 0.05);
+      const pantsMat = this.getSharedMat(pantsKey, pantsColor, 0.7, 0.05);
+      const hairMat = this.getSharedMat(hairKey, hairColor, 0.8, 0.0);
+      const shoeMat = this.getSharedMat('shoes', new Color3(0.1, 0.1, 0.1), 0.5, 0.1);
 
       // Head
       const headDiameter = isChild ? 0.6 * s : 0.45 * s;
@@ -132,12 +149,8 @@ export class EntityManager {
       const eyeY = head.position.y + headDiameter * 0.1;
       const eyeZ = headDiameter * 0.35;
       const eyeSpacing = headDiameter * 0.2;
-      const eyeWhiteMat = new PBRMaterial(id + '_eyeW', this.scene);
-      eyeWhiteMat.albedoColor = new Color3(1, 1, 1);
-      eyeWhiteMat.roughness = 0.1; eyeWhiteMat.metallic = 0.0;
-      const eyePupilMat = new PBRMaterial(id + '_eyeP', this.scene);
-      eyePupilMat.albedoColor = new Color3(0.05, 0.05, 0.05);
-      eyePupilMat.roughness = 0.1;
+      const eyeWhiteMat = this.getSharedMat('eye_white', new Color3(1, 1, 1), 0.1, 0.0);
+      const eyePupilMat = this.getSharedMat('eye_pupil', new Color3(0.05, 0.05, 0.05), 0.1, 0.0);
 
       for (const side of [-1, 1]) {
         const eyeW = MeshBuilder.CreateSphere(id + '_eyeW' + side, { diameter: headDiameter * 0.22 }, this.scene);
@@ -160,12 +173,11 @@ export class EntityManager {
           const hatHeight = staffType === 'entertainer' ? 0.3 * s : 0.15 * s;
           const hat = MeshBuilder.CreateCylinder(id + '_hat', { diameter: 0.35 * s, height: hatHeight, tessellation: 8 }, this.scene);
           hat.position.y = head.position.y + (hatHeight + headDiameter) / 2;
-          const hatMat = new PBRMaterial(id + '_hatMat', this.scene);
-          hatMat.roughness = 0.6; hatMat.metallic = 0.1;
-          if (staffType === 'cleaner') hatMat.albedoColor = new Color3(0.1, 0.4, 0.1);
-          else if (staffType === 'mechanic') hatMat.albedoColor = new Color3(0.1, 0.1, 0.5);
-          else if (staffType === 'security') hatMat.albedoColor = new Color3(0, 0, 0);
-          else if (staffType === 'entertainer') hatMat.albedoColor = new Color3(0.8, 0.2, 0.8);
+          const hatColor = staffType === 'cleaner' ? new Color3(0.1, 0.4, 0.1)
+            : staffType === 'mechanic' ? new Color3(0.1, 0.1, 0.5)
+            : staffType === 'security' ? new Color3(0, 0, 0)
+            : new Color3(0.8, 0.2, 0.8);
+          const hatMat = this.getSharedMat(`hat_${staffType}`, hatColor, 0.6, 0.1);
           hat.material = hatMat; hat.parent = root;
           if (staffType !== 'entertainer') {
               const rim = MeshBuilder.CreateDisc(id + '_rim', { radius: 0.25 * s }, this.scene);
@@ -184,26 +196,21 @@ export class EntityManager {
       if (staffType === 'cleaner') {
           const vest = MeshBuilder.CreateCylinder(id + '_vest', { diameterTop: 0.36 * s, diameterBottom: 0.31 * s, height: 0.25 * s, tessellation: 10 }, this.scene);
           vest.position.y = torso.position.y;
-          const vestMat = new PBRMaterial(id + '_vestMat', this.scene);
-          vestMat.albedoColor = new Color3(0.9, 0.9, 0.1);
-          vestMat.roughness = 0.5; vestMat.metallic = 0.3;
+          const vestMat = this.getSharedMat('vest_cleaner', new Color3(0.9, 0.9, 0.1), 0.5, 0.3);
           vest.material = vestMat; vest.parent = root;
       } else if (staffType === 'security') {
           const badge = MeshBuilder.CreateBox(id + '_badge', { size: 0.05 * s }, this.scene);
           badge.position.y = torso.position.y + 0.2 * s;
           badge.position.z = -0.16 * s;
-          const badgeMat = new PBRMaterial(id + '_badgeMat', this.scene);
-          badgeMat.albedoColor = new Color3(0.9, 0.9, 0.9);
-          badgeMat.roughness = 0.3; badgeMat.metallic = 0.6;
+          const badgeMat = this.getSharedMat('badge', new Color3(0.9, 0.9, 0.9), 0.3, 0.6);
           badge.material = badgeMat; badge.parent = root;
       } else if (staffType === 'entertainer') {
           for (let i = 0; i < 3; i++) {
               const dot = MeshBuilder.CreateSphere(id + '_dot' + i, { diameter: 0.06 * s }, this.scene);
               dot.position.y = torso.position.y + 0.1 * s - i * 0.1 * s;
               dot.position.z = -0.16 * s;
-              const dotMat = new PBRMaterial(id + '_dotMat' + i, this.scene);
-              dotMat.albedoColor = i % 2 === 0 ? new Color3(1, 1, 0) : new Color3(0, 1, 1);
-              dotMat.roughness = 0.3; dotMat.metallic = 0.5;
+              const dotColor = i % 2 === 0 ? new Color3(1, 1, 0) : new Color3(0, 1, 1);
+              const dotMat = this.getSharedMat(`dot_${i % 2}`, dotColor, 0.3, 0.5);
               dot.material = dotMat; dot.parent = root;
           }
       }

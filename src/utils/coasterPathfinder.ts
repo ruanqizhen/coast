@@ -42,7 +42,7 @@ export function findCoasterClosurePath(
     const getStateKey = (n: StateNode) => `${n.x},${n.z},${n.h},${n.rot}`;
 
     let iterations = 0;
-    const MAX_ITERATIONS = 50000;
+    const MAX_ITERATIONS = 12000;
 
     while (openList.length > 0 && iterations < MAX_ITERATIONS) {
         iterations++;
@@ -108,7 +108,8 @@ export function findCoasterClosurePath(
                 const dx = Math.abs(targetX - nextX);
                 const dz = Math.abs(targetZ - nextZ);
                 const dh = Math.abs(targetH - nextH);
-                const h_cost = Math.max((dx + dz) / 2, dh);
+                // Weighted heuristic: height costs are more expensive (4x for vertical)
+                const h_cost = (dx + dz) / 2 + dh * 1.5;
                 
                 const neighbor: StateNode = {
                     x: nextX,

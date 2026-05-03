@@ -79,12 +79,7 @@ export class SceneManager {
     this.shadowGenerator.useBlurExponentialShadowMap = false;
     this.shadowGenerator.usePercentageCloserFiltering = true;
 
-    // Default environment for PBR reflections
-    this.scene.createDefaultEnvironment({
-      createSkybox: false,
-      createGround: false,
-      environmentTexture: "https://playground.babylonjs.com/textures/environment.dds" // Built-in Babylon CDN texture for reflections
-    });
+    // No external environment map — PBR materials rely on direct lighting only
 
     // Subsystems (fxManager + LODManager before EntityManager so they can be injected)
     this.gridManager = new GridManager(this.scene);

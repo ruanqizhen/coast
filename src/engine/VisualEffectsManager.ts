@@ -15,8 +15,10 @@ interface FloatText {
 export class VisualEffectsManager {
   private scene: Scene;
   private emotionMeshes: Map<string, Mesh> = new Map();
+  private visitorMoods: Map<string, string> = new Map(); // Track last known mood
   private floatTexts: FloatText[] = [];
   private emojiTexCache: Map<string, DynamicTexture> = new Map();
+  private sharedEmojiMats: Map<string, StandardMaterial> = new Map(); // Shared materials per mood
 
   constructor(scene: Scene) {
     this.scene = scene;
@@ -71,13 +73,21 @@ export class VisualEffectsManager {
     return tex;
   }
 
-  /** Update or create emotion bubble above a visitor */
+  /** Update or create emotion bubble above a visitor. Only updates when mood changes. */
   updateVisitorEmotion(visitorId: string, satisfaction: number, worldPos: Vector3) {
-    let mood: 'happy' | 'neutral' | 'unhappy' | 'angry';
+    let mood: string;
     if (satisfaction >= 70) mood = 'happy';
     else if (satisfaction >= 40) mood = 'neutral';
     else if (satisfaction >= 20) mood = 'unhappy';
     else mood = 'angry';
+
+    // Skip update if mood hasn't changed
+    if (this.visitorMoods.get(visitorId) === mood) {
+      const mesh = this.emotionMeshes.get(visitorId);
+      if (mesh) mesh.position.copyFromFloats(worldPos.x, worldPos.y + 2.2, worldPos.z);
+      return;
+    }
+    this.visitorMoods.set(visitorId, mood);
 
     let mesh = this.emotionMeshes.get(visitorId);
     if (!mesh) {
@@ -87,15 +97,17 @@ export class VisualEffectsManager {
       this.emotionMeshes.set(visitorId, mesh);
     }
 
-    const tex = this.getEmojiTexture(mood);
-    if (mesh.material) (mesh.material as StandardMaterial).dispose();
-    const mat = new StandardMaterial(`emojiMat_${visitorId}`, this.scene);
-    mat.diffuseTexture = tex;
-    mat.diffuseTexture.hasAlpha = true;
-    mat.useAlphaFromDiffuseTexture = true;
-    mat.backFaceCulling = false;
-    mesh.material = mat;
-
+    // Use shared material per mood (no per-frame allocation)
+    if (!this.sharedEmojiMats.has(mood)) {
+      const tex = this.getEmojiTexture(mood as 'happy' | 'neutral' | 'unhappy' | 'angry');
+      const mat = new StandardMaterial(`emoji_shared_${mood}`, this.scene);
+      mat.diffuseTexture = tex;
+      mat.diffuseTexture.hasAlpha = true;
+      mat.useAlphaFromDiffuseTexture = true;
+      mat.backFaceCulling = false;
+      this.sharedEmojiMats.set(mood, mat);
+    }
+    mesh.material = this.sharedEmojiMats.get(mood)!;
     mesh.position.copyFromFloats(worldPos.x, worldPos.y + 2.2, worldPos.z);
   }
 
@@ -103,10 +115,10 @@ export class VisualEffectsManager {
   removeVisitorEmotion(visitorId: string) {
     const mesh = this.emotionMeshes.get(visitorId);
     if (mesh) {
-      if (mesh.material) (mesh.material as StandardMaterial).dispose();
       mesh.dispose();
       this.emotionMeshes.delete(visitorId);
     }
+    this.visitorMoods.delete(visitorId);
   }
 
   /** Spawn floating income text above a position */
@@ -163,11 +175,11 @@ export class VisualEffectsManager {
   }
 
   dispose() {
-    for (const [, mesh] of this.emotionMeshes) {
-      if (mesh.material) (mesh.material as StandardMaterial).dispose();
-      mesh.dispose();
-    }
+    for (const [, mesh] of this.emotionMeshes) mesh.dispose();
     this.emotionMeshes.clear();
+    this.visitorMoods.clear();
+    for (const [, mat] of this.sharedEmojiMats) mat.dispose();
+    this.sharedEmojiMats.clear();
     for (const ft of this.floatTexts) {
       ft.material.dispose();
       ft.mesh.dispose();

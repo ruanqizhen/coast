@@ -191,7 +191,7 @@ export function CoasterEditor() {
       let best: typeof currentCoasterPieces | null = null;
       let bestScore = -Infinity;
 
-      for (let attempt = 0; attempt < 100; attempt++) {
+      for (let attempt = 0; attempt < 30; attempt++) {
         const pieces: typeof currentCoasterPieces = [];
         pieces.push({ x: startX, z: startZ, type: 'straight', rotation: 0, slopeAngle: 0 });
 

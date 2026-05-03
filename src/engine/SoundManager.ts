@@ -1,12 +1,27 @@
 import { Scene, Sound } from '@babylonjs/core';
 
 let sharedCtx: AudioContext | null = null;
+let gestureReceived = false;
+
 function getCtx(): AudioContext | null {
+  if (!gestureReceived) return null; // Block until user gesture
   if (!sharedCtx) {
     try { sharedCtx = new AudioContext(); } catch { return null; }
   }
-  if (sharedCtx.state === 'suspended') sharedCtx.resume();
+  if (sharedCtx.state === 'suspended') {
+    sharedCtx.resume().catch(() => {});
+  }
   return sharedCtx;
+}
+
+// Deferred init: create AudioContext on first user gesture
+export function initAudioOnGesture() {
+  gestureReceived = true;
+  const ctx = getCtx();
+  if (ctx && ctx.state === 'suspended') {
+    ctx.resume().catch(() => {});
+  }
+  window.dispatchEvent(new CustomEvent('onBGMStart'));
 }
 
 export class SoundManager {

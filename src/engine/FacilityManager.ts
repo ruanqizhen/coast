@@ -67,7 +67,7 @@ export class FacilityManager {
       mat.albedoColor = color;
       mat.metallic = metallic;
       mat.roughness = roughness;
-      mat.environmentIntensity = 0.4;
+      mat.environmentIntensity = 0.05;
       return mat;
   }
 
@@ -576,7 +576,7 @@ export class FacilityManager {
       glassMat.alpha = 0.4;
       glassMat.roughness = 0.1;
       glassMat.metallic = 0.2;
-      glassMat.environmentIntensity = 0.8;
+      glassMat.environmentIntensity = 0.05;
       glass.material = glassMat;
       glass.parent = parent;
 
@@ -906,7 +906,7 @@ export class FacilityManager {
               const lightMat = new PBRMaterial("glowMat", this.scene);
               lightMat.albedoColor = new Color3(0.1, 0.5, 0.2);
               lightMat.emissiveColor = new Color3(0.2, 1.0, 0.4);
-              lightMat.roughness = 0.3;
+              lightMat.roughness = 0.3; lightMat.environmentIntensity = 0.05;
               light.material = lightMat;
               light.parent = parent;
           }
@@ -1002,7 +1002,7 @@ export class FacilityManager {
           const sailMat = new PBRMaterial("sailMat", this.scene);
           sailMat.albedoColor = new Color3(0.1, 0.1, 0.1);
           sailMat.alpha = 0.9;
-          sailMat.roughness = 0.85;
+          sailMat.roughness = 0.85; sailMat.environmentIntensity = 0.05;
           const sail = MeshBuilder.CreateBox("sail", { width: 0.05, depth: 3, height: 2.5 }, this.scene);
           sail.position.y = 7;
           sail.material = sailMat;
@@ -1094,7 +1094,7 @@ export class FacilityManager {
       glassMat.alpha = 0.35;
       glassMat.roughness = 0.1;
       glassMat.metallic = 0.2;
-      glassMat.environmentIntensity = 0.8;
+      glassMat.environmentIntensity = 0.05;
 
       for (const zOff of [d * 0.25, -d * 0.25]) {
           const glass = MeshBuilder.CreateBox("glass", { width: w * 0.88, depth: 0.04, height: 0.95 }, this.scene);

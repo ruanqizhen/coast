@@ -11,6 +11,7 @@ import { FacilityInfoCard } from './components/FacilityInfoCard';
 import { VisitorInfoCard } from './components/VisitorInfoCard';
 import { TutorialOverlay } from './components/TutorialOverlay';
 import { TitleScreen } from './components/TitleScreen';
+import { ScenarioSelect } from './components/ScenarioSelect';
 import { saveManager } from './engine/SaveSystem';
 import { CONSTANTS } from './config/constants';
 import type { PlacedFacility, SaveData } from './types';
@@ -26,6 +27,7 @@ export function App() {
   const [showTitle, setShowTitle] = useState(() => {
     try { return localStorage.getItem('coast_returning') !== 'true'; } catch { return true; }
   });
+  const [showScenarioSelect, setShowScenarioSelect] = useState(false);
   const [showTutorial, setShowTutorial] = useState(() => {
     try { return localStorage.getItem('coast_tutorial_done') !== 'true'; } catch { return true; }
   });
@@ -139,6 +141,12 @@ export function App() {
            id: `ach_${payload.id}`, text: `🏆 成就解锁: ${payload.name}`,
            priority: 'milestone', timestamp: Date.now()
          });
+      } else if (type === 'SCENARIO_WIN') {
+         gState.addMessage({
+           id: `win_${Date.now()}`, text: '🎉 恭喜！你已完成场景目标！',
+           priority: 'milestone', timestamp: Date.now()
+         });
+         window.dispatchEvent(new CustomEvent('onStarUp'));
       }
     };
 
@@ -382,10 +390,30 @@ export function App() {
       {showTitle && <TitleScreen onStart={() => {
         try { localStorage.setItem('coast_returning', 'true'); } catch {}
         setShowTitle(false);
+        setShowScenarioSelect(true);
+      }} />}
+
+      {/* Scenario selection */}
+      {showScenarioSelect && <ScenarioSelect onSelect={(sc) => {
+        setShowScenarioSelect(false);
+        // Apply scenario conditions
+        const gs = useGameState.getState();
+        gs.setGridSize(sc.startGridSize);
+        if (sc.startLoan > 0) {
+          gs.setLoan({ principal: sc.startLoan, monthlyRate: CONSTANTS.LOAN_MONTHLY_RATE, maxLoan: CONSTANTS.MAX_LOAN });
+        }
+        // Set money after a tick to avoid conflict with initial state
+        setTimeout(() => {
+          useGameState.setState({ money: sc.startMoney });
+        }, 0);
+        // Send scenario to worker
+        if (workerRef.current) {
+          workerRef.current.postMessage({ type: 'SET_SCENARIO', payload: sc });
+        }
       }} />}
 
       {/* Tutorial overlay */}
-      {!showTitle && showTutorial && <TutorialOverlay onClose={() => setShowTutorial(false)} />}
+      {!showTitle && !showScenarioSelect && showTutorial && <TutorialOverlay onClose={() => setShowTutorial(false)} />}
 
       {/* Auto-save indicator */}
       {isSaving && (
