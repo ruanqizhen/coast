@@ -16,7 +16,6 @@ export class RoadRenderer {
   private matWide: PBRMaterial;
   private matStaff: PBRMaterial;
   private matMarking: PBRMaterial;
-  private lineMeshes: Mesh[] = [];
 
   constructor(scene: Scene) {
     this.scene = scene;

@@ -122,6 +122,7 @@ export class SoundManager {
   playBreakdownAlarm() {
     if (!this.enabled) return;
     const ctx = getCtx(); if (!ctx || !this.sfxGain) return;
+    const gain = this.sfxGain;
     const freqs = [600, 450, 600];
     freqs.forEach((f, i) => {
       const osc = ctx.createOscillator();
@@ -131,7 +132,7 @@ export class SoundManager {
       const t = ctx.currentTime + i * 0.15;
       g.gain.setValueAtTime(0.1, t);
       g.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
-      osc.connect(g); g.connect(this.sfxGain);
+      osc.connect(g); g.connect(gain);
       osc.start(t); osc.stop(t + 0.12);
     });
   }
@@ -253,10 +254,8 @@ export class SoundManager {
   }
 
   // ── Facility spatial sounds ──
-  playFacilitySound(instanceId: string, typeId: string) {
+  playFacilitySound(_instanceId: string, _typeId: string) {
     if (!this.enabled || !this.scene) return;
-    // Placeholder for 3D spatial audio per facility type
-    // Would load from audio assets or synthesize per-type loops
   }
 
   stopFacilitySound(instanceId: string) {

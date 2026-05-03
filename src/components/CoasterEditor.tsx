@@ -3,7 +3,7 @@ import { useParkState } from '../store/useParkState';
 import { useGameState } from '../store/useGameState';
 import type { TrackPieceType } from '../types';
 import { TRACK_PIECE_STATS } from '../types';
-import { MoveRight, TrendingUp, TrendingDown, RefreshCcw, Check, X, Lock, Undo2, Wand2, Play } from 'lucide-react';
+import { MoveRight, TrendingUp, TrendingDown, RefreshCcw, Check, X, Undo2, Wand2 } from 'lucide-react';
 import { CONSTANTS } from '../config/constants';
 import { findCoasterClosurePath } from '../utils/coasterPathfinder';
 

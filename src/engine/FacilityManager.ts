@@ -263,7 +263,7 @@ export class FacilityManager {
           ps.minLifeTime = 0.5;
           ps.maxLifeTime = 1.2;
           ps.emitRate = 200;
-          ps.blendMode = ParticleSystem.BLENDMODE_ADDITIVE;
+          ps.blendMode = ParticleSystem.BLENDMODE_ADD;
 
           ps.gravity = new Vector3(0, -9.81, 0);
           ps.direction1 = new Vector3(-1, 5, 1);
@@ -288,7 +288,7 @@ export class FacilityManager {
           ps2.minSize = 0.02; ps2.maxSize = 0.06;
           ps2.minLifeTime = 0.3; ps2.maxLifeTime = 0.7;
           ps2.emitRate = 100;
-          ps2.blendMode = ParticleSystem.BLENDMODE_ADDITIVE;
+          ps2.blendMode = ParticleSystem.BLENDMODE_ADD;
           ps2.gravity = new Vector3(0, -15, 0);
           ps2.direction1 = new Vector3(-0.5, -1, 0.5);
           ps2.direction2 = new Vector3(0.5, -2, -0.5);

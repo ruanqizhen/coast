@@ -57,7 +57,6 @@ let visitorTimeouts: Record<string, number[]> = {};
 
 // Track removed visitor IDs for delta sync
 let removedVisitors: string[] = [];
-let removedStaff: string[] = [];
 let newVisitorIds: Set<string> = new Set();
 
 function addVisitorTimeout(vId: string, ms: number, fn: () => void) {
@@ -278,8 +277,7 @@ function startLoops() {
   if (simInterval === null) {
     simInterval = self.setInterval(() => {
       const dirtyVisitors: Record<string, Visitor> = {};
-      const dirtyStaff: Record<string, Staff> = {};
-      simulateFrame(dirtyVisitors, dirtyStaff);
+      simulateFrame(dirtyVisitors);
       // Mark newly created visitors as dirty
       for (const nvId of newVisitorIds) {
         if (visitors[nvId]) dirtyVisitors[nvId] = visitors[nvId];
@@ -290,16 +288,13 @@ function startLoops() {
         type: 'SIM_UPDATE',
         payload: {
           visitors: Object.keys(dirtyVisitors).length > 0 ? dirtyVisitors : undefined,
-          staff: Object.keys(dirtyStaff).length > 0 ? dirtyStaff : undefined,
           vomitPoints,
           trashPoints,
           removedVisitors: removedVisitors.length > 0 ? [...removedVisitors] : undefined,
-          removedStaff: removedStaff.length > 0 ? [...removedStaff] : undefined,
           fullSync: false
         }
       });
       removedVisitors.length = 0;
-      removedStaff.length = 0;
     }, (1000 / SIM_FPS) / currentSpeed);
   }
 }
@@ -709,17 +704,14 @@ function applyIntelligentPricing() {
 // ═══════════════════════════════════
 let lastSpatialRebuild = 0;
 
-function simulateFrame(
-  dirtyVisitors?: Record<string, Visitor>,
-  dirtyStaff?: Record<string, Staff>
-) {
+function simulateFrame(dirtyVisitors?: Record<string, Visitor>) {
   const dt = 0.1 / currentSpeed;
   if (Date.now() - lastSpatialRebuild > 2000) {
     rebuildSpatialIndex();
     lastSpatialRebuild = Date.now();
   }
   simulateVisitors(dt, dirtyVisitors);
-  simulateStaff(dt, dirtyStaff);
+  simulateStaff(dt);
   checkVandalismConsequences();
   updateCongestionMap();
 }

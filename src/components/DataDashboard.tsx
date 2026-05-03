@@ -172,7 +172,7 @@ export function DataDashboard({ onClose }: Props) {
                     <YAxis stroke="#888" tickFormatter={(v) => `$${Math.abs(v)}`} />
                     <Tooltip
                       contentStyle={{ background: 'var(--panel-bg)', border: 'none', borderRadius: 8, color: '#fff' }}
-                      formatter={(value: number) => [`$${Math.abs(value).toLocaleString()}`, '']}
+                      formatter={(value) => [`$${Math.abs(Number(value ?? 0)).toLocaleString()}`, '']}
                     />
                     <Bar dataKey="value" name="金额" radius={[4, 4, 0, 0]}>
                       {expenseData.map((d, i) => (

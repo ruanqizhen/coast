@@ -3,7 +3,7 @@
  * for both facility placement and road placement modes.
  */
 import {
-  Scene, MeshBuilder, PBRMaterial, StandardMaterial, DynamicTexture, Color3, Color4, Vector3, PointerEventTypes, Mesh
+  Scene, MeshBuilder, PBRMaterial, StandardMaterial, DynamicTexture, Color3, Vector3, PointerEventTypes, Mesh
 } from '@babylonjs/core';
 import { CONSTANTS } from '../config/constants';
 import { useParkState } from '../store/useParkState';

@@ -17,15 +17,10 @@ export class LODManager {
   private camera: ArcRotateCamera;
   private entities: Map<string, TrackedEntity> = new Map();
   private lastCameraHeight: number = 0;
-  private _renderObserver: (() => void) | null = null;
 
   constructor(_scene: any, camera: ArcRotateCamera) {
     this.camera = camera;
-
-    // Hook into render loop for LOD checks (throttled internally)
-    const update = () => this.update();
-    _scene.onBeforeRenderObservable.add(update);
-    this._renderObserver = update;
+    _scene.onBeforeRenderObservable.add(() => this.update());
   }
 
   track(id: string, node: TransformNode | Mesh, type: 'visitor' | 'facility' | 'scenery', basePos: () => { x: number; z: number }) {

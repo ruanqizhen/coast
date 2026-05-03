@@ -29,7 +29,6 @@ export class SceneManager {
   private _nightLights: PointLight[] = [];
   private _dustPS: ParticleSystem | null = null;
   // Scratch objects to avoid per-frame allocations
-  private _scratchVec3 = new Vector3(0, 0, 0);
   private _scratchColor3 = new Color3(0, 0, 0);
   private _scratchColor4 = new Color4(0, 0, 0, 1);
   private _scratchColor4b = new Color4(0, 0, 0, 1);
@@ -75,10 +74,10 @@ export class SceneManager {
     sun.position = new Vector3(100, 200, 100);
     this.sunLight = sun;
 
-    // Shadows: PCF soft shadows at 1024 — sufficient for top-down view
+    // Shadows: PCF-like soft shadows at 1024 — sufficient for top-down view
     this.shadowGenerator = new ShadowGenerator(1024, sun);
     this.shadowGenerator.useBlurExponentialShadowMap = false;
-    this.shadowGenerator.usePercentageCloserSoftShadows = true;
+    this.shadowGenerator.usePercentageCloserFiltering = true;
 
     // Default environment for PBR reflections
     this.scene.createDefaultEnvironment({
@@ -87,13 +86,13 @@ export class SceneManager {
       environmentTexture: "https://playground.babylonjs.com/textures/environment.dds" // Built-in Babylon CDN texture for reflections
     });
 
-    // Subsystems (LODManager before EntityManager so it can be injected)
+    // Subsystems (fxManager + LODManager before EntityManager so they can be injected)
     this.gridManager = new GridManager(this.scene);
     this.facilityManager = new FacilityManager(this.scene, this.shadowGenerator);
+    this.fxManager = new VisualEffectsManager(this.scene);
     this.lodManager = new LODManager(this.scene, this.camera);
     this.entityManager = new EntityManager(this.scene, this.lodManager, this.fxManager);
     this.roadRenderer = new RoadRenderer(this.scene);
-    this.fxManager = new VisualEffectsManager(this.scene);
     this.soundManager = new SoundManager(this.scene);
 
     // Distance fog for atmosphere
@@ -182,7 +181,7 @@ export class SceneManager {
     dustPS.minSize = 0.02; dustPS.maxSize = 0.08;
     dustPS.minLifeTime = 3; dustPS.maxLifeTime = 8;
     dustPS.emitRate = 8;
-    dustPS.blendMode = ParticleSystem.BLENDMODE_ADDITIVE;
+    dustPS.blendMode = ParticleSystem.BLENDMODE_ADD;
     dustPS.gravity = new Vector3(0, -0.15, 0);
     dustPS.direction1 = new Vector3(-0.1, 0.05, -0.1);
     dustPS.direction2 = new Vector3(0.1, 0.15, 0.1);

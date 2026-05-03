@@ -32,7 +32,7 @@ export class CelebrationEffect {
     ps.minSize = 0.15; ps.maxSize = 0.5;
     ps.minLifeTime = 1.0; ps.maxLifeTime = 2.5;
     ps.emitRate = 200;
-    ps.blendMode = ParticleSystem.BLENDMODE_ADDITIVE;
+    ps.blendMode = ParticleSystem.BLENDMODE_ADD;
     ps.gravity = new Vector3(0, 3, 0);
     ps.direction1 = new Vector3(-5, 8, -5);
     ps.direction2 = new Vector3(5, 15, 5);

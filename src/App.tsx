@@ -97,14 +97,9 @@ export function App() {
           }
           pState.setVisitors(currentVisitors);
         }
-        if (payload.staff || payload.removedStaff) {
+        if (payload.staff) {
           const currentStaff = { ...useParkState.getState().staff };
-          if (payload.staff) {
-            for (const id in payload.staff) currentStaff[id] = payload.staff[id];
-          }
-          if (payload.removedStaff) {
-            for (const id of payload.removedStaff) delete currentStaff[id];
-          }
+          for (const id in payload.staff) currentStaff[id] = payload.staff[id];
           pState.setStaff(currentStaff);
         }
         pState.setVomitPoints(payload.vomitPoints);
@@ -204,17 +199,8 @@ export function App() {
      // Road session cancel — undo all roads placed this session
      const handleRoadSessionCancel = (e: any) => {
        const roads: { x: number; z: number }[] = e.detail;
-       const { removeRoad, roads: currentRoads } = useParkState.getState();
        const { addMoney } = useGameState.getState();
        const roadSet = new Set(roads.map(r => `${r.x},${r.z}`));
-       // Remove each road tile and refund
-       for (const r of roads) {
-         const existing = currentRoads.find(road => road.x === r.x && road.z === r.z);
-         if (existing) {
-           const refund = existing.type === 'normal' ? 5 : existing.type === 'wide' ? 9 : 3;
-           // Remove from store
-         }
-       }
        // Batch remove via zustand
        useParkState.setState(state => ({
          roads: state.roads.filter(r => !roadSet.has(`${r.x},${r.z}`))

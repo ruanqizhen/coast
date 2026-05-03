@@ -1,4 +1,4 @@
-import { Scene, MeshBuilder, PBRMaterial, Color3, Vector3, Mesh, TransformNode, Animation } from '@babylonjs/core';
+import { Scene, MeshBuilder, PBRMaterial, Color3, Vector3, Mesh, TransformNode } from '@babylonjs/core';
 import { useParkState } from '../store/useParkState';
 import { ObjectPool } from './ObjectPool';
 import { LODManager } from './LODManager';
@@ -47,23 +47,12 @@ export class EntityManager {
   private scene: Scene;
 
   private visitorNodes: Record<string, TransformNode> = {};
-  private visitorInstances: Record<string, Mesh> = {};
   private visitorBobPhases: Record<string, number> = {};
   private staffNodes: Record<string, TransformNode> = {};
   private vomitMeshes: Record<string, Mesh> = {};
   private vomitPool: ObjectPool<Mesh>;
 
-  private vomitMat: StandardMaterial;
-
-  // Instanced mesh templates for visitors
-  private visitorTemplates: Mesh[] = [];
-  private visitorTemplateCount = 5;
-
-  // Pre-created materials for staff
-  private cleanerShirtMat: StandardMaterial;
-  private cleanerPantsMat: StandardMaterial;
-  private mechanicShirtMat: StandardMaterial;
-  private mechanicPantsMat: StandardMaterial;
+  private vomitMat: PBRMaterial;
 
   private lodManager: LODManager | null;
   private fxManager: VisualEffectsManager | null;
@@ -72,9 +61,6 @@ export class EntityManager {
     this.scene = scene;
     this.lodManager = lodManager ?? null;
     this.fxManager = fxManager ?? null;
-
-    // Create visitor templates for instanced rendering
-    this.createVisitorTemplates();
 
     this.vomitMat = new PBRMaterial('vomMat', scene);
     this.vomitMat.albedoColor = new Color3(0.5, 0.6, 0.1);
@@ -93,76 +79,15 @@ export class EntityManager {
       200
     );
 
-    // Staff uniforms
-    this.cleanerShirtMat = new PBRMaterial('clnShirt', scene);
-    this.cleanerShirtMat.albedoColor = new Color3(0.15, 0.65, 0.15);
-    this.cleanerShirtMat.roughness = 0.7;
-    this.cleanerPantsMat = new PBRMaterial('clnPants', scene);
-    this.cleanerPantsMat.albedoColor = new Color3(0.15, 0.35, 0.15);
-    this.cleanerPantsMat.roughness = 0.7;
-
-    this.mechanicShirtMat = new PBRMaterial('mecShirt', scene);
-    this.mechanicShirtMat.albedoColor = new Color3(0.15, 0.25, 0.7);
-    this.mechanicShirtMat.roughness = 0.7;
-    this.mechanicPantsMat = new PBRMaterial('mecPants', scene);
-    this.mechanicPantsMat.albedoColor = new Color3(0.12, 0.12, 0.4);
-    this.mechanicPantsMat.roughness = 0.7;
-
-    // Selective subscriptions: only react to changes in specific slices
-    useParkState.subscribe(
-      (state) => state.visitors,
-      (visitors) => { this.updateVisitors(visitors); },
-      { equalityFn: (a, b) => a === b }
-    );
-    useParkState.subscribe(
-      (state) => state.staff,
-      (staff) => { this.updateStaff(staff); },
-      { equalityFn: (a, b) => a === b }
-    );
-    useParkState.subscribe(
-      (state) => state.vomitPoints,
-      (vomitPoints) => { this.updateVomitPoints(vomitPoints); },
-      { equalityFn: (a, b) => a === b }
-    );
+    // Subscribe to state changes
+    useParkState.subscribe((state) => {
+      this.updateVisitors(state.visitors);
+      this.updateStaff(state.staff);
+      this.updateVomitPoints(state.vomitPoints);
+    });
   }
 
-  /**
-   * Pre-create instanced mesh templates for visitors.
-   * Merges humanoid parts into single meshes for efficient instancing.
-   */
-  private createVisitorTemplates() {
-    const colorSchemes = [
-      { shirt: new Color3(0.85, 0.25, 0.25), pants: new Color3(0.15, 0.15, 0.35), skin: new Color3(0.96, 0.82, 0.7), hair: new Color3(0.1, 0.08, 0.05) },
-      { shirt: new Color3(0.2, 0.5, 0.85), pants: new Color3(0.2, 0.2, 0.2), skin: new Color3(0.87, 0.72, 0.55), hair: new Color3(0.35, 0.2, 0.1) },
-      { shirt: new Color3(0.95, 0.85, 0.2), pants: new Color3(0.25, 0.35, 0.55), skin: new Color3(0.72, 0.55, 0.4), hair: new Color3(0.6, 0.35, 0.15) },
-      { shirt: new Color3(0.3, 0.75, 0.45), pants: new Color3(0.55, 0.45, 0.35), skin: new Color3(0.55, 0.38, 0.26), hair: new Color3(0.35, 0.2, 0.1) },
-      { shirt: new Color3(0.6, 0.3, 0.7), pants: new Color3(0.2, 0.2, 0.2), skin: new Color3(0.87, 0.72, 0.55), hair: new Color3(0.85, 0.7, 0.3) },
-    ];
-
-    for (let i = 0; i < colorSchemes.length; i++) {
-      const cs = colorSchemes[i];
-      const dummyRoot = new TransformNode(`vis_tpl_${i}`, this.scene);
-      this.buildHumanoidParts(dummyRoot, cs.skin, cs.shirt, cs.pants, cs.hair, 0.75, true);
-
-      const childMeshes = dummyRoot.getChildMeshes() as Mesh[];
-      if (childMeshes.length > 0) {
-        childMeshes.forEach(m => m.setParent(null));
-        const merged = Mesh.MergeMeshes(childMeshes, true, true, undefined, false, true) as Mesh;
-        if (merged) {
-          merged.isVisible = false;
-          merged.isPickable = true;
-          merged.id = `vis_tpl_${i}`;
-          this.visitorTemplates.push(merged);
-        }
-      }
-      dummyRoot.dispose();
-    }
-  }
-
-  /**
-   * Build a humanoid figure: head, hair, torso, two arms, two legs, shoes.
-   * All meshes are parented under a single TransformNode.
-   */
+  /** Build humanoid body parts parented under the given root node */
   private buildHumanoidParts(
       root: TransformNode,
       skinColor: Color3,

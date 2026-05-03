@@ -113,7 +113,7 @@ export class VisualEffectsManager {
   spawnIncomePopup(worldPos: Vector3, amount: number) {
     // Create dynamic texture with text
     const tex = new DynamicTexture(`popup_${Date.now()}`, 128, this.scene, false);
-    const ctx = tex.getContext();
+    const ctx = tex.getContext() as CanvasRenderingContext2D;
     ctx.fillStyle = 'transparent';
     ctx.fillRect(0, 0, 128, 128);
     ctx.font = 'bold 32px Inter, sans-serif';
